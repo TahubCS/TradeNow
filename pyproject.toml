@@ -1,0 +1,7 @@
+[project]
+name = "tradenow"
+version = "0.1.0"
+description = "Offline research scaffold for Micro Gold futures"
+requires-python = ">=3.11"
+dependencies = []
+
