@@ -22,11 +22,35 @@ class ResearchTests(unittest.TestCase):
         self.assertEqual(first["fills"][0]["side"], "BUY")
         self.assertEqual(first["open_contracts"], 0)
         self.assertEqual(first["ending_equity"], "99895.00")
+        self.assertEqual(first["total_pnl"], "-105.00")
+        self.assertEqual(first["closed_trades"][0]["net_pnl"], "-105.00")
+        self.assertEqual(first["equity_curve"][-1]["equity"], first["ending_equity"])
+        self.assertFalse(first["halted"])
 
     def test_risk_rejects_excess_notional(self):
         result = simulate(load_bars(SAMPLE), Config(max_notional_fraction=Decimal("0.01")))
         self.assertEqual(result["fills"], [])
         self.assertTrue(any(not decision["approved"] for decision in result["risk_decisions"]))
+
+    def test_drawdown_halts_entries_and_closes_at_next_open(self):
+        result = simulate(load_bars(SAMPLE),
+                          Config(max_drawdown_fraction=Decimal("0.0009")))
+        self.assertTrue(result["halted"])
+        self.assertEqual(result["fills"][-1]["date"], "2026-09-15")
+        self.assertEqual(result["fills"][-1]["side"], "SELL")
+        self.assertEqual(result["open_contracts"], 0)
+        self.assertTrue(any(decision["reason"] == "DRAWDOWN_LIMIT"
+                            for decision in result["risk_decisions"]))
+        self.assertTrue(all(signal["target_contracts"] == 0
+                            for signal in result["signals"] if signal["date"] >= "2026-09-14"))
+
+    def test_final_bar_halt_reports_unclosed_position(self):
+        bars = load_bars(SAMPLE)[:8]
+        bars[-1] = replace(bars[-1], low=Decimal("1980"), close=Decimal("1980"))
+        result = simulate(bars, Config(max_drawdown_fraction=Decimal("0.001")))
+        self.assertTrue(result["halted"])
+        self.assertEqual(result["open_contracts"], 1)
+        self.assertEqual([fill["side"] for fill in result["fills"]], ["BUY"])
 
     def test_invalid_bars_fail_before_simulation(self):
         text = SAMPLE.read_text(encoding="utf-8")
