@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from decimal import Decimal
 
+from .execution import ApprovedOrder, SimulatedBroker
 from .market_data import Bar
 
 
@@ -16,6 +17,7 @@ class Config:
     max_drawdown_fraction: Decimal = Decimal("0.10")
     fast_window: int = 3
     slow_window: int = 5
+    enable_entries: bool = True
 
 
 def simulate(bars: list[Bar], config: Config = Config()) -> dict:
@@ -34,25 +36,23 @@ def simulate(bars: list[Bar], config: Config = Config()) -> dict:
             or not 0 < config.max_drawdown_fraction <= 1):
         raise ValueError("Invalid simulation configuration")
 
-    cash = config.starting_cash
-    entry_price: Decimal | None = None
-    entry_date: str | None = None
+    broker = SimulatedBroker(config.starting_cash, config.contract_multiplier,
+                             config.tick_size, config.commission_per_side)
     target = 0
     halted = False
-    peak_equity = cash
+    peak_equity = broker.cash
     max_drawdown = Decimal("0")
     signals: list[dict] = []
+    proposals: list[dict] = []
     decisions: list[dict] = []
-    fills: list[dict] = []
-    trades: list[dict] = []
     equity_curve: list[dict] = []
 
     for index, bar in enumerate(bars):
         # The target was computed at the previous close, so today's open can fill it.
-        if target == 1 and entry_price is None:
+        if target == 1 and broker.entry_price is None:
             fill_price = bar.open + config.tick_size
             notional = fill_price * config.contract_multiplier
-            approved = notional <= cash * config.max_notional_fraction
+            approved = notional <= broker.cash * config.max_notional_fraction
             decisions.append({
                 "date": bar.date.isoformat(),
                 "action": "BUY",
@@ -60,30 +60,21 @@ def simulate(bars: list[Bar], config: Config = Config()) -> dict:
                 "reason": "WITHIN_NOTIONAL_LIMIT" if approved else "NOTIONAL_LIMIT",
             })
             if approved:
-                entry_price = fill_price
-                entry_date = bar.date.isoformat()
-                cash -= config.commission_per_side
-                fills.append({"date": bar.date.isoformat(), "side": "BUY",
-                              "price": str(fill_price), "contracts": 1})
-        elif target == 0 and entry_price is not None:
-            fill_price = bar.open - config.tick_size
-            gross_pnl = (fill_price - entry_price) * config.contract_multiplier
-            net_pnl = gross_pnl - 2 * config.commission_per_side
-            cash += gross_pnl - config.commission_per_side
-            trades.append({"entry_date": entry_date, "exit_date": bar.date.isoformat(),
-                           "gross_pnl": str(gross_pnl), "net_pnl": str(net_pnl)})
-            entry_price = None
-            entry_date = None
+                broker.submit(ApprovedOrder(f"{bar.date.isoformat()}-BUY", bar.date.isoformat(),
+                                            "BUY", bar.open))
+        elif target == 0 and broker.entry_price is not None:
             decisions.append({"date": bar.date.isoformat(), "action": "SELL",
                               "approved": True, "reason": "CLOSE_POSITION"})
-            fills.append({"date": bar.date.isoformat(), "side": "SELL",
-                          "price": str(fill_price), "contracts": 1})
+            broker.submit(ApprovedOrder(f"{bar.date.isoformat()}-SELL", bar.date.isoformat(),
+                                        "SELL", bar.open))
 
-        equity = cash if entry_price is None else cash + (bar.close - entry_price) * config.contract_multiplier
+        broker.reconcile()
+        equity = broker.equity(bar.close)
         peak_equity = max(peak_equity, equity)
         drawdown = (peak_equity - equity) / peak_equity
         max_drawdown = max(max_drawdown, drawdown)
-        equity_curve.append({"date": bar.date.isoformat(), "equity": str(equity)})
+        equity_curve.append({"date": bar.date.isoformat(), "equity": str(equity),
+                             "position_contracts": int(broker.entry_price is not None)})
         if drawdown >= config.max_drawdown_fraction and not halted:
             halted = True
             decisions.append({"date": bar.date.isoformat(), "action": "HALT_NEW_ENTRIES",
@@ -92,11 +83,22 @@ def simulate(bars: list[Bar], config: Config = Config()) -> dict:
         if index >= config.slow_window - 1:
             fast = sum(item.close for item in bars[index + 1 - config.fast_window:index + 1])
             slow = sum(item.close for item in bars[index + 1 - config.slow_window:index + 1])
-            strategy_target = int(fast / config.fast_window > slow / config.slow_window)
-            target = 0 if halted else strategy_target
+            fast_average = fast / config.fast_window
+            slow_average = slow / config.slow_window
+            strategy_target = int(fast_average > slow_average)
+            target = 0 if halted or not config.enable_entries else strategy_target
             signals.append({"date": bar.date.isoformat(),
                             "strategy_target_contracts": strategy_target,
                             "target_contracts": target})
+            action = ("BUY" if target == 1 and broker.entry_price is None else
+                      "SELL" if target == 0 and broker.entry_price is not None else "NO_TRADE")
+            proposals.append({"date": bar.date.isoformat(), "action": action,
+                              "requested_contracts": target,
+                              "evidence": {"fast_sma": str(fast_average.quantize(Decimal("0.001"))),
+                                           "slow_sma": str(slow_average.quantize(Decimal("0.001")))},
+                              "reason": ("DRAWDOWN_LIMIT" if halted else
+                                         "SELECTION_GATE" if not config.enable_entries else
+                                         "STRATEGY_SIGNAL")})
 
     total_pnl = equity - config.starting_cash
     return {
@@ -108,11 +110,12 @@ def simulate(bars: list[Bar], config: Config = Config()) -> dict:
         "total_pnl": str(total_pnl),
         "total_return_pct": str((total_pnl / config.starting_cash * 100).quantize(Decimal("0.001"))),
         "max_drawdown_pct": str((max_drawdown * 100).quantize(Decimal("0.001"))),
-        "open_contracts": int(entry_price is not None),
+        "open_contracts": int(broker.entry_price is not None),
         "halted": halted,
         "signals": signals,
+        "proposals": proposals,
         "risk_decisions": decisions,
-        "fills": fills,
-        "closed_trades": trades,
+        "fills": broker.fills,
+        "closed_trades": broker.closed_trades,
         "equity_curve": equity_curve,
     }

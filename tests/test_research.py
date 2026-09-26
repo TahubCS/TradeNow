@@ -5,7 +5,9 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
-from tradenow.market_data import load_bars
+from tradenow.execution import ApprovedOrder, SimulatedBroker
+from tradenow.market_data import load_bars, parse_bars
+from tradenow.offline import run_offline
 from tradenow.simulation import Config, simulate
 
 
@@ -60,6 +62,11 @@ class ResearchTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "unique and increasing"):
                 load_bars(Path("bad.csv"))
 
+    def test_nonfinite_price_is_rejected(self):
+        csv_text = "date,contract,open,high,low,close,volume\n2026-09-01,MGC_SIM,NaN,2010,1990,2000,100\n"
+        with self.assertRaisesRegex(ValueError, "finite and positive"):
+            parse_bars(StringIO(csv_text))
+
     def test_same_day_close_cannot_change_that_days_fill(self):
         bars = load_bars(SAMPLE)
         original = simulate(bars)
@@ -67,6 +74,42 @@ class ResearchTests(unittest.TestCase):
         changed[6] = replace(changed[6], close=Decimal("2011"))
         other = simulate(changed)
         self.assertEqual(original["fills"][0], other["fills"][0])
+
+    def test_simulated_order_id_is_idempotent(self):
+        broker = SimulatedBroker(Decimal("100000"), Decimal("10"),
+                                 Decimal("0.10"), Decimal("1.50"))
+        order = ApprovedOrder("order-1", "2026-09-10", "BUY", Decimal("2000"))
+        first = broker.submit(order)
+        self.assertEqual(first, broker.submit(order))
+        self.assertEqual(len(broker.fills), 1)
+        self.assertEqual(broker.cash, Decimal("99998.50"))
+        with self.assertRaisesRegex(ValueError, "reused"):
+            broker.submit(replace(order, opening_price=Decimal("2001")))
+        broker.reconcile()
+        broker.fills.clear()
+        with self.assertRaisesRegex(RuntimeError, "does not match"):
+            broker.reconcile()
+
+    def test_offline_research_is_replayable_and_keeps_holdout_separate(self):
+        report, csv_text = run_offline()
+        self.assertEqual((report, csv_text), run_offline())
+        self.assertEqual(report["mode"], "offline_simulation")
+        self.assertEqual(report["data"]["bars"], 360)
+        self.assertEqual(len(report["research"]["hypotheses"]), 3)
+        self.assertEqual(report["research"]["selected_hypothesis"], "sma_3_10")
+        self.assertGreater(report["research"]["holdout_summary"]["fills"], 0)
+        periods = report["data"]["periods"]
+        self.assertLess(periods["development"]["last_date"], periods["validation"]["first_date"])
+        self.assertLess(periods["validation"]["last_date"], periods["holdout"]["first_date"])
+
+    def test_offline_selection_can_choose_no_trade(self):
+        report, _ = run_offline(seed=7)
+        self.assertIsNone(report["research"]["selected_hypothesis"])
+        self.assertEqual(report["research"]["holdout_summary"]["fills"], 0)
+
+    def test_offline_rejects_too_short_dataset(self):
+        with self.assertRaisesRegex(ValueError, "at least 180"):
+            run_offline(days=40)
 
 
 if __name__ == "__main__":
