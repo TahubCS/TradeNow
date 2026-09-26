@@ -19,6 +19,24 @@ python -m tradenow
 python -m unittest discover -s tests -v
 ```
 
+## Local dashboard
+
+Install the optional web server once, then open the dashboard in your browser:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e ".[web]"
+.\.venv\Scripts\python.exe -m tradenow web
+```
+
+Visit `http://127.0.0.1:8000`. The server binds to your computer only. It runs
+the same seeded simulation in memory and displays price and equity charts,
+candidate selection, fills, risk decisions, and the stress suite. It is read-only:
+there are no brokerage endpoints, Databento calls, uploads, or remote assets.
+The API limits seeds and bar counts so accidental requests remain bounded. Stop
+the service with Ctrl+C. Uvicorn is the only optional runtime dependency; the
+research commands above remain standard-library-only.
+
 `python -m tradenow offline` is the main workflow. It saves generated bars, a full
 JSON audit record, and a readable Markdown report under `artifacts/offline/`.
 The default seed exercises selection and simulated fills; seed 7 demonstrates the

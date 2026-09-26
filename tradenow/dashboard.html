@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tradenow · Offline Research</title>
+  <style>
+    :root { color-scheme: dark; --bg:#080d19; --panel:#111a2c; --panel2:#15213a; --line:#27344f; --text:#e8eefb; --muted:#96a7c4; --blue:#82a9ff; --mint:#55d6af; --amber:#ffc46b; --red:#ff818d; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:radial-gradient(circle at 76% -12%, #1a3155 0, transparent 34%), var(--bg); color:var(--text); font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif; }
+    .shell { max-width:1280px; margin:auto; padding:24px 28px 64px; }
+    header { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:8px 0 34px; }
+    .brand { display:flex; align-items:center; gap:12px; font-weight:800; letter-spacing:.01em; font-size:20px; }
+    .brand-mark { display:grid; place-items:center; width:34px; height:34px; border-radius:10px; background:linear-gradient(145deg,#65e0b5,#5f8ef9); color:#071224; font-weight:900; }
+    .status-pill { border:1px solid #2e806d; background:#123b37; color:#9af1d4; border-radius:999px; padding:6px 12px; font-size:11px; font-weight:800; letter-spacing:.12em; }
+    h1,h2,h3,p { margin-top:0; }
+    .eyebrow { color:var(--mint); text-transform:uppercase; letter-spacing:.18em; font-size:11px; font-weight:800; margin-bottom:10px; }
+    h1 { font-size:clamp(30px,4vw,48px); line-height:1.08; letter-spacing:-.04em; margin-bottom:12px; }
+    .intro { color:var(--muted); max-width:700px; font-size:16px; }
+    .hero { display:grid; grid-template-columns:1.5fr 1fr; gap:26px; align-items:end; margin-bottom:24px; }
+    .controls { background:linear-gradient(145deg,#172640,#111b2f); border:1px solid #334462; border-radius:18px; padding:20px; box-shadow:0 18px 50px #0004; }
+    .controls h2 { font-size:15px; margin-bottom:14px; }
+    .control-row { display:flex; gap:10px; align-items:end; flex-wrap:wrap; }
+    label { display:block; color:var(--muted); font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.12em; margin-bottom:5px; }
+    input { width:104px; border:1px solid #425372; border-radius:9px; background:#0b1426; color:var(--text); padding:9px 10px; font:inherit; }
+    input:focus,button:focus-visible { outline:2px solid var(--blue); outline-offset:2px; }
+    button { border:0; border-radius:9px; padding:10px 15px; font:700 13px system-ui,sans-serif; cursor:pointer; transition:transform .15s,filter .15s; }
+    button:hover { transform:translateY(-1px); filter:brightness(1.1); }
+    button:disabled { opacity:.55; cursor:wait; transform:none; }
+    .primary { color:#081326; background:linear-gradient(125deg,#80aeff,#8ce0d7); }
+    .secondary { color:#d9e6ff; background:#263855; border:1px solid #496080; }
+    #message { min-height:22px; color:var(--muted); font-size:12px; margin:12px 0 0; }
+    .grid-metrics { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:12px; margin-bottom:18px; }
+    .card,.panel { background:linear-gradient(160deg,var(--panel),#101827); border:1px solid var(--line); border-radius:16px; }
+    .card { padding:17px 18px; min-height:108px; }
+    .card .label { color:var(--muted); font-size:11px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; }
+    .card .value { font-size:25px; font-weight:800; margin-top:10px; letter-spacing:-.03em; white-space:nowrap; }
+    .card small { color:var(--muted); font-size:11px; }
+    .positive { color:var(--mint)!important; } .negative { color:var(--red)!important; }
+    .charts { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:18px; }
+    .panel { padding:20px; min-width:0; }
+    .panel-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:14px; }
+    .panel h2 { font-size:16px; margin:0; }
+    .panel .sub { font-size:12px; color:var(--muted); margin-top:3px; }
+    .tag { border:1px solid #3a5073; border-radius:7px; padding:4px 8px; color:#afc4e7; font-size:10px; font-weight:800; letter-spacing:.07em; white-space:nowrap; }
+    svg.chart { width:100%; height:240px; display:block; overflow:visible; }
+    .chart-foot { display:flex; justify-content:space-between; color:var(--muted); font-size:11px; margin:4px 4px 0; }
+    .tables { display:grid; grid-template-columns:1.1fr 1fr; gap:16px; margin-bottom:18px; }
+    table { width:100%; border-collapse:collapse; font-size:13px; }
+    th { text-align:left; color:var(--muted); text-transform:uppercase; font-size:10px; letter-spacing:.1em; padding:9px 7px; border-bottom:1px solid var(--line); }
+    td { padding:11px 7px; border-bottom:1px solid #22304b; }
+    tr:last-child td { border-bottom:0; }
+    .right { text-align:right; } .selected { color:var(--mint); font-weight:800; }
+    .scroll { max-height:286px; overflow:auto; }
+    .empty { padding:24px 4px; color:var(--muted); font-size:13px; }
+    .lower { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    .warning { margin-top:20px; border:1px solid #665735; background:#282418; color:#ddc693; border-radius:12px; padding:12px 16px; font-size:12px; }
+    #stressPanel[hidden] { display:none; }
+    .pass { color:var(--mint); } .fail { color:var(--red); }
+    @media(max-width:1000px) { .hero,.charts,.tables,.lower { grid-template-columns:1fr; } .grid-metrics { grid-template-columns:repeat(3,1fr); } }
+    @media(max-width:620px) { .shell { padding:17px 15px 42px; } header { padding-bottom:22px; } .grid-metrics { grid-template-columns:repeat(2,1fr); } .card .value { font-size:21px; } .panel { padding:15px; } .controls { padding:15px; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header><div class="brand"><span class="brand-mark">T</span> Tradenow <span style="color:#6d819f;font-weight:500">/ research lab</span></div><span class="status-pill">● OFFLINE ONLY</span></header>
+    <section class="hero">
+      <div><p class="eyebrow">Micro Gold · Synthetic Research</p><h1>See every decision<br>before any real trade.</h1><p class="intro">Replay fictional gold bars, compare hypotheses, and inspect the holdout portfolio. This local dashboard never contacts a brokerage or market-data provider.</p></div>
+      <form class="controls" id="runForm"><h2>Simulation controls</h2><div class="control-row"><div><label for="seed">Seed</label><input id="seed" type="number" min="0" max="1000000" value="3" required></div><div><label for="days">Bars</label><input id="days" type="number" min="180" max="1000" value="360" required></div><button class="primary" id="runButton" type="submit">Run simulation</button><button class="secondary" id="stressButton" type="button">Stress suite</button></div><p id="message" role="status" aria-live="polite">Ready to replay.</p></form>
+    </section>
+    <section class="grid-metrics" aria-label="Holdout metrics">
+      <div class="card"><div class="label">Holdout P&amp;L</div><div class="value" id="metricPnl">—</div><small>Includes open P&amp;L</small></div>
+      <div class="card"><div class="label">Selected</div><div class="value" id="metricStrategy">—</div><small>Validation only</small></div>
+      <div class="card"><div class="label">Max drawdown</div><div class="value" id="metricDrawdown">—</div><small>Closing equity</small></div>
+      <div class="card"><div class="label">Fills</div><div class="value" id="metricFills">—</div><small>Simulated orders</small></div>
+      <div class="card"><div class="label">End position</div><div class="value" id="metricPosition">—</div><small>MGC_SIM contracts</small></div>
+    </section>
+    <section class="charts">
+      <article class="panel"><div class="panel-head"><div><h2>Fictional gold price</h2><div class="sub">Holdout close · buy and sell markers</div></div><span class="tag">MGC_SIM</span></div><svg class="chart" id="priceChart" role="img" aria-label="Synthetic gold price chart"></svg><div class="chart-foot" id="priceDates"></div></article>
+      <article class="panel"><div class="panel-head"><div><h2>Portfolio equity</h2><div class="sub">Marked to each simulated close</div></div><span class="tag">USD · SIMULATED</span></div><svg class="chart" id="equityChart" role="img" aria-label="Portfolio equity chart"></svg><div class="chart-foot" id="equityDates"></div></article>
+    </section>
+    <section class="tables">
+      <article class="panel"><div class="panel-head"><div><h2>Hypothesis selection</h2><div class="sub">Score = validation return % − max drawdown %</div></div><span class="tag" id="runId">RUN —</span></div><div class="scroll"><table><thead><tr><th>Candidate</th><th class="right">Development P&amp;L</th><th class="right">Validation P&amp;L</th><th class="right">Score</th></tr></thead><tbody id="candidateRows"></tbody></table></div></article>
+      <article class="panel"><div class="panel-head"><div><h2>Simulated fills</h2><div class="sub">Approved orders at the next bar's open</div></div><span class="tag">READ ONLY</span></div><div class="scroll"><table><thead><tr><th>Date</th><th>Side</th><th class="right">Price</th><th class="right">Contracts</th></tr></thead><tbody id="fillRows"></tbody></table><div class="empty" id="emptyFills" hidden>No fills. The selection gate or signal chose no trade.</div></div></article>
+    </section>
+    <section class="lower">
+      <article class="panel"><div class="panel-head"><div><h2>Risk decisions</h2><div class="sub">The proposal cannot call the broker directly</div></div></div><div class="scroll"><table><thead><tr><th>Date</th><th>Action</th><th>Status</th><th>Reason</th></tr></thead><tbody id="riskRows"></tbody></table><div class="empty" id="emptyRisk" hidden>No orders were proposed during this holdout.</div></div></article>
+      <article class="panel" id="stressPanel" hidden><div class="panel-head"><div><h2>Stress suite</h2><div class="sub" id="stressSummary">Synthetic seeds and fault injections</div></div><span class="tag" id="stressStatus">—</span></div><div class="scroll"><table><thead><tr><th>Seed</th><th>Selection</th><th class="right">Holdout P&amp;L</th><th>Status</th></tr></thead><tbody id="stressRows"></tbody></table></div><p class="sub" id="faultSummary" style="margin-top:14px"></p></article>
+      <article class="panel" id="guidePanel"><div class="panel-head"><div><h2>How to read this run</h2><div class="sub">One pass from evidence to execution</div></div></div><p style="color:var(--muted);margin:0">Three fixed moving-average hypotheses are measured on development and validation segments. Only validation chooses the holdout strategy. If every score is nonpositive, the system holds cash. Each period starts flat, and the order manager enforces risk approval and deduplicates simulated order IDs.</p><p class="sub" id="periodLabel" style="margin:16px 0 0"></p></article>
+    </section>
+    <aside class="warning">SIMULATION ONLY · Prices are fictional. MGC_SIM never expires; margin, real exchange hours, market impact, and brokerage fills are not modeled. No Databento credits or real money are used.</aside>
+  </main>
+  <script>
+    const $ = id => document.getElementById(id);
+    const ns = 'http://www.w3.org/2000/svg';
+    const money = value => new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:2}).format(Number(value));
+    function cell(row, value, className='') { const td=document.createElement('td'); td.textContent=value; if(className) td.className=className; row.appendChild(td); }
+    function clear(id) { $(id).replaceChildren(); }
+    function chart(id, points, key, color, datesId, fills=[]) {
+      const svg=$(id); svg.replaceChildren(); svg.setAttribute('viewBox','0 0 900 240');
+      if(!points.length) return;
+      const vals=points.map(p=>Number(p[key])); const lo=Math.min(...vals), hi=Math.max(...vals), span=Math.max(hi-lo,1);
+      const x=i=>46+i*820/Math.max(points.length-1,1), y=v=>205-(v-lo+span*.08)/(span*1.16)*175;
+      for(let n=0;n<5;n++){ const gy=27+n*44; const line=document.createElementNS(ns,'line'); line.setAttribute('x1','46');line.setAttribute('x2','866');line.setAttribute('y1',gy);line.setAttribute('y2',gy);line.setAttribute('stroke','#2c3952');line.setAttribute('stroke-dasharray','3 7');svg.appendChild(line); }
+      const poly=document.createElementNS(ns,'polyline'); poly.setAttribute('points',points.map((p,i)=>`${x(i)},${y(Number(p[key]))}`).join(' '));poly.setAttribute('fill','none');poly.setAttribute('stroke',color);poly.setAttribute('stroke-width','3');poly.setAttribute('stroke-linecap','round');poly.setAttribute('stroke-linejoin','round');svg.appendChild(poly);
+      for(const fill of fills){ const i=points.findIndex(p=>p.date===fill.date);if(i<0)continue;const dot=document.createElementNS(ns,'circle');dot.setAttribute('cx',x(i));dot.setAttribute('cy',y(Number(fill.price)));dot.setAttribute('r','5');dot.setAttribute('fill',fill.side==='BUY'?'#55d6af':'#ffc46b');dot.setAttribute('stroke','#0b1426');dot.setAttribute('stroke-width','2');const title=document.createElementNS(ns,'title');title.textContent=`${fill.side} ${fill.date} @ ${fill.price}`;dot.appendChild(title);svg.appendChild(dot);}
+      $(datesId).replaceChildren(); const first=document.createElement('span'),last=document.createElement('span'); first.textContent=points[0].date;last.textContent=points.at(-1).date;$(datesId).append(first,last);
+    }
+    function setMetric(id, value, signed=false){ const el=$(id);el.textContent=value;el.classList.remove('positive','negative');if(signed)el.classList.add(Number(value.replace(/[^0-9.-]/g,''))>=0?'positive':'negative'); }
+    function render(run){
+      const s=run.holdout_summary;
+      setMetric('metricPnl',money(s.total_pnl),true);setMetric('metricStrategy',run.selected_hypothesis||'NO TRADE');setMetric('metricDrawdown',s.max_drawdown_pct+'%');setMetric('metricFills',String(s.fills));setMetric('metricPosition',String(s.open_contracts));
+      $('runId').textContent='RUN '+run.run_id.slice(0,8).toUpperCase();
+      chart('priceChart',run.prices,'close','#82a9ff','priceDates',run.fills);
+      chart('equityChart',run.equity_curve,'equity','#55d6af','equityDates');
+      clear('candidateRows');for(const c of run.candidates){const row=document.createElement('tr');cell(row,c.name,c.name===run.selected_hypothesis?'selected':'');cell(row,money(c.development_pnl),'right');cell(row,money(c.validation_pnl),'right');cell(row,c.validation_score,'right');$('candidateRows').appendChild(row);}
+      clear('fillRows');for(const f of run.fills){const row=document.createElement('tr');cell(row,f.date);cell(row,f.side,f.side==='BUY'?'positive':'');cell(row,money(f.price),'right');cell(row,String(f.contracts),'right');$('fillRows').appendChild(row);}$('emptyFills').hidden=run.fills.length>0;
+      clear('riskRows');for(const r of run.risk_decisions){const row=document.createElement('tr');cell(row,r.date);cell(row,r.action);cell(row,r.approved?'APPROVED':'BLOCKED',r.approved?'positive':'negative');cell(row,r.reason);$('riskRows').appendChild(row);}$('emptyRisk').hidden=run.risk_decisions.length>0;
+      const p=run.periods;$('periodLabel').textContent=`Development ${p.development.first_date} → ${p.development.last_date} · Validation ${p.validation.first_date} → ${p.validation.last_date} · Holdout ${p.holdout.first_date} → ${p.holdout.last_date}`;
+    }
+    async function loadRun(event){if(event)event.preventDefault();const button=$('runButton');button.disabled=true;$('message').textContent='Replaying synthetic bars…';try{const seed=Number($('seed').value),days=Number($('days').value);const response=await fetch(`/api/simulation?seed=${seed}&days=${days}`);const data=await response.json();if(!response.ok)throw Error(data.error||'Simulation failed');render(data);$('message').textContent=`Run ${data.run_id.slice(0,8)} complete · ${data.days} bars · no external calls`; }catch(error){$('message').textContent=error.message;}finally{button.disabled=false;}}
+    async function loadStress(){const button=$('stressButton');button.disabled=true;$('message').textContent='Running 12 synthetic seeds and fault checks…';try{const response=await fetch('/api/stress?seeds=12&days=360');const data=await response.json();if(!response.ok)throw Error(data.error||'Stress suite failed');$('stressPanel').hidden=false;$('guidePanel').hidden=true;$('stressStatus').textContent=data.passed?'PASS':'FAIL';$('stressStatus').className='tag '+(data.passed?'pass':'fail');$('stressSummary').textContent=`${data.seeds} seeds · ${data.coverage.no_trade_selections} no-trade selections`;$('faultSummary').textContent=`${data.fault_cases.filter(c=>c.passed).length}/${data.fault_cases.length} injected faults caught`;clear('stressRows');for(const s of data.seed_runs){const row=document.createElement('tr');cell(row,String(s.seed));cell(row,s.selected_hypothesis||'NO TRADE');cell(row,s.holdout_pnl===undefined?'—':money(s.holdout_pnl),'right');cell(row,s.passed?'PASS':'FAIL',s.passed?'pass':'fail');$('stressRows').appendChild(row);}$('message').textContent=data.passed?'Stress suite passed · synthetic checks only':'Stress suite failed · inspect results';}catch(error){$('message').textContent=error.message;}finally{button.disabled=false;}}
+    $('runForm').addEventListener('submit',loadRun);$('stressButton').addEventListener('click',loadStress);loadRun();
+  </script>
+</body>
+</html>

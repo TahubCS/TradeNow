@@ -57,15 +57,33 @@ def stress_main(argv: list[str]) -> int:
     return 0 if report["passed"] else 1
 
 
+def web_main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(description="Serve the local read-only simulation dashboard")
+    parser.add_argument("--port", type=int, default=8000)
+    args = parser.parse_args(argv)
+    if not 1 <= args.port <= 65535:
+        parser.error("port must be between 1 and 65535")
+    try:
+        import uvicorn
+    except ModuleNotFoundError:
+        print('Uvicorn is required for the dashboard: python -m pip install -e ".[web]"',
+              file=sys.stderr)
+        return 1
+    uvicorn.run("tradenow.web:app", host="127.0.0.1", port=args.port)
+    return 0
+
+
 def main() -> int:
     if len(sys.argv) > 1 and sys.argv[1] == "offline":
         return offline_main(sys.argv[2:])
     if len(sys.argv) > 1 and sys.argv[1] == "stress":
         return stress_main(sys.argv[2:])
+    if len(sys.argv) > 1 and sys.argv[1] == "web":
+        return web_main(sys.argv[2:])
 
     parser = argparse.ArgumentParser(
         description="Replay local MGC bars without network or broker access",
-        epilog="Use 'python -m tradenow offline' for research or 'python -m tradenow stress' for checks.",
+        epilog="Use 'python -m tradenow offline', 'stress', or 'web' for the research tools.",
     )
     parser.add_argument("--data", type=Path,
                         default=Path(__file__).resolve().parent.parent / "sample_data" / "mgc_synthetic.csv",

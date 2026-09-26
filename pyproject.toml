@@ -5,3 +5,15 @@ description = "Offline research scaffold for Micro Gold futures"
 requires-python = ">=3.11"
 dependencies = []
 
+[project.optional-dependencies]
+web = ["uvicorn>=0.30,<1"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["tradenow"]
+
+[tool.setuptools.package-data]
+tradenow = ["dashboard.html"]
