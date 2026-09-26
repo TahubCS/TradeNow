@@ -14,6 +14,7 @@ Requires Python 3.11 or newer. No packages need to be installed.
 ```powershell
 python -m tradenow offline
 python -m tradenow offline --seed 7 --days 360
+python -m tradenow stress
 python -m tradenow
 python -m unittest discover -s tests -v
 ```
@@ -26,6 +27,14 @@ Each chronological period starts flat. The validation score is return percentage
 minus maximum drawdown percentage. A nonpositive best score selects no trade.
 The holdout period is never used to select a candidate. None of these synthetic
 results say anything about expected performance in the gold market.
+
+`python -m tradenow stress` replays 12 seeds twice and audits every development,
+validation, and holdout simulation. It also injects missing weekdays, extreme
+synthetic price jumps, duplicate bars, order retries, a broken fill ledger, an
+oversized proposal, and an adverse price gap. It writes JSON and Markdown reports
+under `artifacts/stress/` and exits with a failure code if a check fails. Use
+`--seeds` and `--days` to change the run size. The 10% jump threshold is a check
+for this fictional feed, not a rule for real market data.
 
 `python -m tradenow` keeps the original short sample replay. It prints a JSON
 experiment record with daily equity, closed-trade P&L,

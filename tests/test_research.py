@@ -9,6 +9,7 @@ from tradenow.execution import ApprovedOrder, SimulatedBroker
 from tradenow.market_data import load_bars, parse_bars
 from tradenow.offline import run_offline
 from tradenow.simulation import Config, simulate
+from tradenow.stress import audit_simulation, run_stress
 
 
 SAMPLE = Path(__file__).resolve().parent.parent / "sample_data" / "mgc_synthetic.csv"
@@ -110,6 +111,21 @@ class ResearchTests(unittest.TestCase):
     def test_offline_rejects_too_short_dataset(self):
         with self.assertRaisesRegex(ValueError, "at least 180"):
             run_offline(days=40)
+
+    def test_stress_suite_covers_trade_no_trade_and_faults(self):
+        report = run_stress()
+        self.assertTrue(report["passed"])
+        self.assertEqual(len(report["seed_runs"]), 12)
+        self.assertEqual(len(report["fault_cases"]), 7)
+        self.assertGreater(report["coverage"]["strategies_selected"], 0)
+        self.assertGreater(report["coverage"]["no_trade_selections"], 0)
+        self.assertGreater(report["coverage"]["negative_holdouts"], 0)
+
+    def test_stress_audit_rejects_fill_without_risk_approval(self):
+        result = simulate(load_bars(SAMPLE))
+        result["risk_decisions"] = []
+        with self.assertRaisesRegex(AssertionError, "lacks risk approval"):
+            audit_simulation(result)
 
 
 if __name__ == "__main__":
