@@ -27,6 +27,7 @@ from .offline import MAX_LOCAL_CSV_BYTES, run_local_csv, run_offline, save_offli
 from .paper_auto import GLD_HISTORY_START, Notices, paper_auto
 from .paper_trading import (
     PaperStore,
+    _jsonable,
     paper_halt,
     paper_plan,
     paper_report,
@@ -39,7 +40,8 @@ from .selection import RESEARCH_CONFIG
 from .settings import load_settings
 from .simulation import Config, simulate
 from .stress import run_stress, save_stress
-from .tiingo import import_complete, import_gld, load_api_key
+from .tiingo import import_complete, import_gld, import_symbol, load_api_key
+from .universe import UNIVERSE, describe, load_universe
 
 
 def _fail(run: Run, error: BaseException) -> int:
@@ -133,17 +135,62 @@ def web_main(argv: list[str], run: Run) -> int:
 
 
 def tiingo_main(argv: list[str], run: Run) -> int:
-    parser = argparse.ArgumentParser(description="Manually import private GLD daily data from Tiingo")
+    parser = argparse.ArgumentParser(description="Manually import private daily data from Tiingo")
     parser.add_argument("--start", required=True, type=date.fromisoformat,
                         help="First requested date (YYYY-MM-DD)")
     parser.add_argument("--end", required=True, type=date.fromisoformat,
                         help="Last requested date (YYYY-MM-DD)")
+    which = parser.add_mutually_exclusive_group()
+    which.add_argument("--symbols", help="Comma-separated tickers (default: GLD)")
+    which.add_argument("--universe", action="store_true",
+                       help=f"All registered symbols: {', '.join(UNIVERSE)}")
     args = parser.parse_args(argv)
+    symbols = (list(UNIVERSE) if args.universe else
+               [item.strip().upper() for item in args.symbols.split(",")] if args.symbols
+               else ["GLD"])
+    if len(symbols) == 1:
+        try:
+            result = import_symbol(symbols[0], args.start, args.end, load_api_key())
+        except (OSError, ValueError) as error:
+            return _fail(run, error)
+        _emit(run, result)
+        return 0
+    # Several symbols: stop at the first failure (a rate limit must not be retried)
+    # and still report what was imported before it.
+    results: dict[str, object] = {}
     try:
-        result = import_gld(args.start, args.end, load_api_key())
+        key = load_api_key()
+        for symbol in symbols:
+            if import_complete(args.start, args.end, symbol=symbol):
+                results[symbol] = {"result": "ALREADY_COMPLETE"}
+                continue
+            results[symbol] = {name: value for name, value in
+                               import_symbol(symbol, args.start, args.end, key).items()
+                               if name in ("result", "bars", "first_bar", "last_bar",
+                                           "pruned_files")}
+    except (OSError, ValueError) as error:
+        _emit(run, {"result": "STOPPED", "error": str(error), "symbols": results})
+        run.fail(error)
+        return 1
+    summary: dict[str, object] = {"result": "IMPORTED", "symbols": results}
+    if args.universe:
+        try:
+            summary["universe"] = describe(load_universe())
+        except (OSError, ValueError) as error:
+            summary["universe"] = {"error": str(error)}
+    _emit(run, _jsonable(summary))
+    return 0
+
+
+def universe_main(argv: list[str], run: Run) -> int:
+    """Check that the latest imports of the registered symbols align, offline."""
+    argparse.ArgumentParser(prog="tradenow universe",
+                            description="Summarize the aligned multi-asset history").parse_args(argv)
+    try:
+        result = describe(load_universe())
     except (OSError, ValueError) as error:
         return _fail(run, error)
-    _emit(run, result)
+    _emit(run, _jsonable(result))
     return 0
 
 
@@ -319,7 +366,7 @@ def notify_test_main(argv: list[str], run: Run) -> int:
 
 COMMANDS = {"offline": offline_main, "stress": stress_main, "web": web_main,
             "tiingo-import": tiingo_main, "gld": gld_main, "notify-test": notify_test_main,
-            "features": features_main}
+            "features": features_main, "universe": universe_main}
 
 
 def main(argv: list[str] | None = None) -> int:
