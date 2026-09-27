@@ -59,6 +59,7 @@ def gld_simulation_view(source_bytes: bytes, filename: str,
     holdout = research["holdout_result"]
     return {"mode": report["mode"], "run_id": report["run_id"],
             "config": report["config"], "data": report["data"],
+            "evaluation": report["evaluation"],
             "days": report["data"]["bars"], "periods": report["data"]["periods"],
             "selected_hypothesis": research["selected_hypothesis"],
             "candidates": candidates, "holdout_summary": research["holdout_summary"],

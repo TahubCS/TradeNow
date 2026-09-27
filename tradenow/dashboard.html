@@ -58,7 +58,7 @@
     .empty { padding:24px 4px; color:var(--muted); font-size:13px; }
     .lower { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
     .warning { margin-top:20px; border:1px solid #665735; background:#282418; color:#ddc693; border-radius:12px; padding:12px 16px; font-size:12px; }
-    #stressPanel[hidden] { display:none; }
+    #stressPanel[hidden],#evaluationPanel[hidden] { display:none; }
     .pass { color:var(--mint); } .fail { color:var(--red); }
     @media(max-width:1000px) { .hero,.charts,.tables,.lower { grid-template-columns:1fr; } .grid-metrics { grid-template-columns:repeat(3,1fr); } }
     @media(max-width:620px) { .shell { padding:17px 15px 42px; } header { padding-bottom:22px; } .grid-metrics { grid-template-columns:repeat(2,1fr); } .card .value { font-size:21px; } .panel { padding:15px; } .controls { padding:15px; } }
@@ -91,6 +91,16 @@
       <article class="panel" id="stressPanel" hidden><div class="panel-head"><div><h2>Stress suite</h2><div class="sub" id="stressSummary">Synthetic seeds and fault injections</div></div><span class="tag" id="stressStatus">—</span></div><div class="scroll"><table><thead><tr><th>Seed</th><th>Selection</th><th class="right">Holdout P&amp;L</th><th>Status</th></tr></thead><tbody id="stressRows"></tbody></table></div><p class="sub" id="faultSummary" style="margin-top:14px"></p></article>
       <article class="panel" id="guidePanel"><div class="panel-head"><div><h2>How to read this run</h2><div class="sub">One pass from evidence to execution</div></div></div><p id="guideText" style="color:var(--muted);margin:0">Three fixed moving-average hypotheses are measured on development and validation segments. Only validation chooses the holdout strategy. If every score is nonpositive, the system holds cash. Each period starts flat, and the order manager enforces risk approval and deduplicates simulated order IDs.</p><p class="sub" id="periodLabel" style="margin:16px 0 0"></p></article>
     </section>
+    <section class="panel" id="evaluationPanel" hidden>
+      <div class="panel-head"><div><h2>GLD evaluation</h2><div class="sub">Holdout benchmarks, trading costs, and earlier rolling tests</div></div><span class="tag">HISTORICAL</span></div>
+      <div class="tables">
+        <div><h3>Holdout comparison</h3><div class="scroll"><table><thead><tr><th>Portfolio</th><th class="right">Return</th><th class="right">Annualized</th><th class="right">Drawdown</th></tr></thead><tbody id="benchmarkRows"></tbody></table></div><p class="sub" id="turnoverSummary"></p></div>
+        <div><h3>Slippage sensitivity</h3><p class="sub">Selected strategy stays fixed</p><div class="scroll"><table><thead><tr><th>Per share</th><th class="right">Return</th><th class="right">Fills</th></tr></thead><tbody id="slippageRows"></tbody></table></div></div>
+      </div>
+      <h3>Rolling tests before the final holdout</h3><p class="sub" id="rollingSummary"></p>
+      <div class="scroll"><table><thead><tr><th>Test dates</th><th>Selected</th><th class="right">Strategy return</th><th class="right">50% buy and hold</th></tr></thead><tbody id="rollingRows"></tbody></table></div>
+      <p class="sub" style="margin:14px 0 0">Each rolling test starts flat; the strategy warms up its SMA while buy-and-hold enters at the first open. Cash assumes zero interest. Benchmarks do not use the strategy drawdown halt.</p>
+    </section>
     <aside class="warning" id="warningText">SIMULATION ONLY · Prices are fictional. Margin is illustrative; missing timestamps cannot verify session hours. Exchange holidays, market impact, and brokerage fills are not modeled. No Databento credits or real money are used.</aside>
   </main>
   <script>
@@ -113,7 +123,7 @@
     function render(run){
       const s=run.holdout_summary;
       const d=run.data;
-      $('stressPanel').hidden=true;$('guidePanel').hidden=false;
+      $('stressPanel').hidden=true;$('guidePanel').hidden=false;$('evaluationPanel').hidden=true;
       if(run.mode==='offline_gld_simulation'){renderGld(run);return;}
       $('instrumentEyebrow').textContent='Micro Gold · Offline Research';
       $('instrumentIntro').textContent='Replay synthetic or locally supplied MGC bars, compare hypotheses, and inspect the holdout portfolio. This dashboard never contacts a brokerage or market-data provider.';
@@ -138,6 +148,13 @@
     }
     function renderGld(run){
       const s=run.holdout_summary,d=run.data,c=run.config;
+      const evaluation=run.evaluation,comparison=evaluation.holdout,rolling=evaluation.rolling_pre_holdout;
+      $('evaluationPanel').hidden=false;
+      clear('benchmarkRows');for(const [label,key] of [['Strategy','strategy'],['Buy and hold 50%','buy_hold_50pct'],['Buy and hold 100%','buy_hold_100pct'],['Cash','cash']]){const item=comparison[key],row=document.createElement('tr');cell(row,label);cell(row,item.total_return_pct+'%','right');cell(row,item.annualized_return_pct+'%','right');cell(row,item.max_drawdown_pct+'%','right');$('benchmarkRows').appendChild(row);}
+      $('turnoverSummary').textContent=`Strategy gross traded notional: ${comparison.strategy.gross_traded_notional_pct_of_starting_cash}% of starting cash`;
+      clear('slippageRows');for(const item of evaluation.slippage_sensitivity){const row=document.createElement('tr');cell(row,money(item.slippage_per_share));cell(row,item.total_return_pct+'%','right');cell(row,String(item.fills),'right');$('slippageRows').appendChild(row);}
+      const rs=rolling.summary;$('rollingSummary').textContent=`${rs.windows} non-overlapping test windows · ${rs.positive_windows} positive · ${rs.beat_buy_hold_50pct_windows} beat 50% buy and hold · ${rs.selected_windows} selected a strategy`;
+      clear('rollingRows');for(const item of rolling.windows){const row=document.createElement('tr');cell(row,`${item.test_start} → ${item.test_end}`);cell(row,item.selected_hypothesis||'NO TRADE');cell(row,item.test_return_pct+'%','right');cell(row,item.buy_hold_50pct_return_pct+'%','right');$('rollingRows').appendChild(row);}
       $('instrumentEyebrow').textContent='GLD · Historical Gold ETF Research';
       $('instrumentIntro').textContent='Replay locally saved GLD daily bars and inspect share-based portfolio results. This dashboard makes no market-data or brokerage calls.';
       $('sourceInfo').textContent=`${d.source==='tiingo_eod_import'?'Tiingo EOD import':'Local GLD CSV'} · ${d.bars} bars · SHA-256 ${d.sha256.slice(0,16)}…`;

@@ -55,6 +55,16 @@ dividends, splits, or adjusted prices that differ from raw prices until those
 cash flows are modeled. Reports go to `artifacts/gld/`; downloaded bars stay
 under `data/private/`. Historical results do not establish expected returns.
 
+The GLD report compares the selected holdout strategy with cash and buy-and-hold
+at 50% and 100% allocation. It reports calendar-time annualized returns, gross
+traded notional relative to starting cash, and holdout results with $0.01,
+$0.05, and $0.10 per-share slippage (with the selected strategy fixed). Rolling
+checks use 504 development, 126 validation, and 126 non-overlapping test bars,
+ending before the final holdout. Each test starts flat; the cash benchmark
+assumes zero interest. The strategy warms up its SMA inside each rolling test,
+while buy-and-hold enters at the first open. These checks expose sensitivity
+and stability, not live trading performance.
+
 ## Local dashboard
 
 Install the optional web server once, then open the dashboard in your browser:

@@ -10,6 +10,7 @@ from io import StringIO
 from pathlib import Path
 
 from .equity import EquityBar, EquityConfig, simulate_equity, validate_equity_bars
+from .gld_evaluation import evaluate_gld
 from .offline import CANDIDATES, evaluate_candidates
 from .tiingo import PRIVATE_DIR
 
@@ -89,21 +90,23 @@ def run_gld_csv(source_bytes: bytes, filename: str = "GLD.csv",
     bars = _bars_from_csv(source_bytes, config)
     periods, hypotheses, selected, best_score, holdout = evaluate_candidates(
         bars, config, simulate_equity)
+    pre_holdout = periods["development"] + periods["validation"]
+    evaluation = evaluate_gld(pre_holdout, periods["holdout"], config, selected, holdout)
     data_hash = hashlib.sha256(source_bytes).hexdigest()
     code_digest = hashlib.sha256()
-    for name in ("equity.py", "gld_research.py", "offline.py"):
+    for name in ("equity.py", "gld_research.py", "gld_evaluation.py", "offline.py"):
         code_digest.update(name.encode("utf-8"))
         code_digest.update((Path(__file__).parent / name).read_bytes())
     code_hash = code_digest.hexdigest()
     basename = Path(filename.replace("\\", "/")).name
     safe_name = "".join(char if char.isalnum() or char in "._- " else "_"
                         for char in basename)[:100] or "GLD.csv"
-    run_inputs = {"schema_version": 1, "symbol": "GLD", "source": source,
+    run_inputs = {"schema_version": 2, "symbol": "GLD", "source": source,
                   "data_hash": data_hash, "code_hash": code_hash,
                   "candidates": CANDIDATES,
                   "config": {key: str(value) for key, value in vars(config).items()}}
     run_id = hashlib.sha256(json.dumps(run_inputs, sort_keys=True).encode()).hexdigest()[:16]
-    return {"schema_version": 1, "mode": "offline_gld_simulation",
+    return {"schema_version": 2, "mode": "offline_gld_simulation",
             "run_id": run_id, "code_sha256": code_hash,
             "config": {key: str(value) for key, value in vars(config).items()},
             "data": {"source": source, "source_name": safe_name, "symbol": "GLD",
@@ -119,6 +122,7 @@ def run_gld_csv(source_bytes: bytes, filename: str = "GLD.csv",
                          "best_validation_score": str(best_score),
                          "holdout_result": holdout,
                          "holdout_summary": _summary(holdout)},
+            "evaluation": evaluation,
             "limits": ["provider prices are not independently verified",
                        "daily bars cannot verify intraday execution or market impact",
                        "simulated fills and slippage only", "cash-funded long positions only"]}
@@ -147,7 +151,8 @@ def render_gld_markdown(report: dict) -> str:
     data = report["data"]
     research = report["research"]
     summary = research["holdout_summary"]
-    return "\n".join([
+    evaluation = report["evaluation"]
+    rows = [
         "# GLD offline research report", "",
         f"Run ID: `{report['run_id']}`  ",
         f"Source: {data['source']} / `{data['source_name']}`  ",
@@ -168,7 +173,47 @@ def render_gld_markdown(report: dict) -> str:
         "Cash-funded whole-share positions only; no futures margin or rolls.",
         "Daily bars and simulated fills do not establish live execution quality.",
         "No brokerage or market-data API was contacted for this replay.", "",
-    ])
+        "## Holdout comparison", "",
+        "| Portfolio | Return | Annualized | Max drawdown |",
+        "| --- | ---: | ---: | ---: |",
+    ]
+    for label, key in (("Selected strategy", "strategy"),
+                       ("Buy and hold, 50% allocation", "buy_hold_50pct"),
+                       ("Buy and hold, 100% allocation", "buy_hold_100pct"),
+                       ("Cash, zero interest", "cash")):
+        item = evaluation["holdout"][key]
+        rows.append(f"| {label} | {item['total_return_pct']}% | "
+                    f"{item['annualized_return_pct']}% | {item['max_drawdown_pct']}% |")
+    turnover = evaluation["holdout"]["strategy"]["gross_traded_notional_pct_of_starting_cash"]
+    rows.extend(["", f"Strategy gross traded notional: {turnover}% of starting cash.",
+                 "", "## Slippage sensitivity", "",
+                 "The holdout strategy selection stays fixed in every scenario.", "",
+                 "| Slippage per share | Holdout return | Fills |",
+                 "| ---: | ---: | ---: |"])
+    for item in evaluation["slippage_sensitivity"]:
+        rows.append(f"| ${item['slippage_per_share']} | "
+                    f"{item['total_return_pct']}% | {item['fills']} |")
+    rolling = evaluation["rolling_pre_holdout"]
+    rolling_summary = rolling["summary"]
+    rows.extend(["", "## Rolling tests before the final holdout", "",
+                 f"Each window uses {rolling['development_bars']} development, "
+                 f"{rolling['validation_bars']} validation, and "
+                 f"{rolling['test_bars']} test trading bars. Test blocks do not overlap.",
+                 f"Positive tests: {rolling_summary['positive_windows']}/"
+                 f"{rolling_summary['windows']}; beat 50% buy and hold: "
+                 f"{rolling_summary['beat_buy_hold_50pct_windows']}/"
+                 f"{rolling_summary['windows']}; selected a strategy: "
+                 f"{rolling_summary['selected_windows']}/"
+                 f"{rolling_summary['windows']}.", "",
+                 "| Test dates | Selected | Strategy return | 50% buy and hold |",
+                 "| --- | --- | ---: | ---: |"])
+    for window in rolling["windows"]:
+        rows.append(f"| {window['test_start']} to {window['test_end']} | "
+                    f"{window['selected_hypothesis'] or 'NO TRADE'} | "
+                    f"{window['test_return_pct']}% | "
+                    f"{window['buy_hold_50pct_return_pct']}% |")
+    rows.extend(["", *evaluation["notes"], ""])
+    return "\n".join(rows)
 
 
 def save_gld_report(report: dict, output_dir: Path) -> tuple[Path, Path]:

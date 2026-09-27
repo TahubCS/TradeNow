@@ -139,6 +139,9 @@ def gld_main(argv: list[str]) -> int:
                       "source_sha256": report["data"]["sha256"],
                       "selected_hypothesis": report["research"]["selected_hypothesis"],
                       "holdout_summary": report["research"]["holdout_summary"],
+                      "holdout_comparison": report["evaluation"]["holdout"],
+                      "rolling_summary": report["evaluation"]["rolling_pre_holdout"]["summary"],
+                      "slippage_sensitivity": report["evaluation"]["slippage_sensitivity"],
                       "report_file": str(json_path.resolve()),
                       "readable_report": str(md_path.resolve())}, indent=2))
     return 0
