@@ -275,7 +275,12 @@ def multi_main(argv: list[str], run: Run) -> int:
 
 def _ml_study() -> Study:
     # Loaded only here, so every other command runs without scikit-learn.
-    from .ml_research import ML_STUDY
+    try:
+        from .ml_research import ML_STUDY
+    except ImportError as error:
+        raise ValueError(f"The ml command needs the pinned model libraries ({error.name} is "
+                         "missing). Install them with: python -m pip install -e \".[ml]\", "
+                         "or run it with the project's .venv Python") from None
     return ML_STUDY
 
 

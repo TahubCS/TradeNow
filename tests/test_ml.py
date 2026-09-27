@@ -175,6 +175,22 @@ class StudyTests(unittest.TestCase):
         self.assertEqual(record["strategy_version"], "ml_adr012_candidates_v1")
         self.assertEqual(record["candidates_evaluated"], 4)
 
+    def test_missing_model_libraries_fail_with_instructions(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.addCleanup(close_logging)
+        root = Path(directory.name)
+        stderr = io.StringIO()
+        # A None entry makes the import fail, as if the ml extra were not installed.
+        with patch.dict("os.environ", {"TRADENOW_DATA_DIR": str(root)}), \
+                patch.dict(sys.modules, {"tradenow.ml_research": None}), \
+                patch("tradenow.__main__.load_universe",
+                      return_value=synthetic_universe(1000)), \
+                redirect_stdout(io.StringIO()), redirect_stderr(stderr):
+            self.assertEqual(main(["ml"]), 1)
+        self.assertIn('pip install -e ".[ml]"', stderr.getvalue())
+        self.assertFalse((root / "experiments.jsonl").exists())
+
     def test_other_commands_do_not_load_scikit_learn(self):
         loaded = subprocess.run(
             [sys.executable, "-c",
