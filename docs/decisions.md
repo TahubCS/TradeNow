@@ -378,11 +378,134 @@ Record the result. The next option is multi-asset trend-following, which
 needs new data, a new simulator, and a new registration ADR. The other option
 is to accept that a low-cost index fund is the better choice.
 
+### Result (2026-09-27)
+
+Evaluated once on the Tiingo GLD history, 5,497 daily bars (experiment
+`cc6999fc32cd36f4`). **Verdict: FAIL.** Failing checks: R1, R2, R4. R3
+passed.
+
+| Rolling tests before the holdout (29 windows) | Registered process | 100% GLD buy-and-hold |
+|---|---|---|
+| Compounded return | +15.6% | +158.7% |
+| Windows with a positive return | 9 of 29 | — |
+| Windows beating same-cap buy-and-hold | 10 of 29 (18 needed) | — |
+| Closed trades | 64 | — |
+
+The final holdout selected `trend_200_volfilter`: +59.5% with an 8.3%
+maximum drawdown, against +125.6% and 26.4% for buy-and-hold. It was in the
+market 36% of the time. Holding about 45% GLD and 55% cash would have had the
+same volatility and a similar return, so the timing added little. That
+period had already been viewed and is not evidence.
+
+No candidate trades real money. Next step: multi-asset trend-following
+(ADR-011).
+
 ### Consequences
 
 - Changing, adding, or removing a candidate requires a new ADR, and every
   earlier result stays in the experiment log.
 - The final GLD holdout has already been viewed and is never evidence.
+
+---
+
+## ADR-011 — Registered Multi-Asset Trend-Following Research
+
+**Status:** Accepted. Registered before any multi-asset code or result
+existed.
+
+### Context
+
+Trend rules on GLD alone failed the gate (ADR-010). Published evidence for
+time-series momentum is much stronger across many markets, because assets
+that do not move together smooth out each other's whipsaws. This ADR fixes
+the assets, rules, sizing, method, and pass criteria before anything is
+built or run.
+
+### Universe and data
+
+- **Six ETFs:** GLD (gold), SLV (silver), SPY (US stocks), EFA
+  (international stocks), IEF (US government bonds), DBC (broad
+  commodities).
+- **History:** from the first day all six have a Tiingo bar (spring 2006) to
+  the latest import. The six share one calendar; a missing day for any
+  symbol is an error, never filled in.
+- **Prices:** Tiingo's dividend- and split-adjusted OHLC for signals,
+  simulated fills, and valuation, so the results include dividends as total
+  return. Raw prices are kept for execution checks.
+
+### Rules and sizing (6 candidates)
+
+Each rule is evaluated per asset at the last close of each month, using the
+point-in-time features of ADR-010 computed on adjusted prices:
+
+- **mom:** in when 12-1 month momentum is positive.
+- **trend:** in when the close is above its 200-day average.
+- **both:** in when both are true.
+
+Two ways to size an asset that is in:
+
+- **eq:** 1/6 of equity.
+- **iv35:** inverse 60-day volatility, normalized across all six assets and
+  capped at 35% per asset, with any excess shared proportionally among the
+  uncapped assets.
+
+Assets that are out hold cash. The candidates are `mom_eq`, `trend_eq`,
+`both_eq`, `mom_iv35`, `trend_iv35`, and `both_iv35`.
+
+### Simulation
+
+- Rebalance monthly: signals at the month's last close, orders at the next
+  open. An asset trades only if its target differs from its holding by more
+  than 1% of equity.
+- Whole shares, sells before buys, cash never negative, never margin, total
+  weight at most 100%.
+- Costs: $0.01 slippage per share, zero commission. The stress test uses
+  $0.10.
+- The 10% portfolio drawdown halt is checked daily: it sells everything and
+  blocks new entries for the rest of the run, as in the GLD research.
+
+### Selection and tests
+
+These are the same as ADR-010. A 60/20/20 chronological split is used, and
+rolling windows before the final holdout: 504 development, 126 validation,
+and 126 test bars, with test blocks that do not overlap. Each window selects
+the candidate with the highest validation return minus maximum drawdown, or
+cash if none is positive.
+
+### Benchmarks and the gate (the strictest option)
+
+The strategy must beat **both** benchmarks:
+
+- **B1:** equal-weight buy-and-hold of the same six ETFs, rebalanced
+  monthly, with the same costs.
+- **B2:** 100% SPY buy-and-hold, the "just buy an index fund" alternative.
+
+| Check | Requirement |
+|---|---|
+| R1 | Compounded return across the rolling test windows exceeds both B1's and B2's |
+| R2 | Beats both B1 and B2 in at least 60% of the rolling windows |
+| R3 | At least 30 closed round trips, counted per asset |
+| R4 | R1 still holds with slippage at $0.10 per share |
+| R5 | Maximum drawdown of the chained rolling test returns is no larger than either benchmark's, chained the same way |
+| F1 | At least 252 paper sessions on one frozen strategy version |
+| F2 | Paper return exceeds both B1 and B2 over those sessions |
+| F3 | Paper maximum drawdown is no larger than either benchmark's |
+| F4 | Mean fill cost against the simulated fill of at most 10 bps, over at least 10 fills |
+
+This is deliberately harder than ADR-008's single-asset gate. Trend-following
+usually trails stocks in long bull markets and wins by losing less in
+crashes, so beating SPY on return over 2006 onward is unlikely. That is
+accepted: the rule exists to prevent investing in anything that an index
+fund would beat.
+
+### What happens after the run
+
+- The result is recorded here and in the experiment log, pass or fail.
+- **If R1 to R5 pass:** multi-asset paper trading is built (a separate ADR),
+  the dry run comes first, then a year of forward testing (F1 to F4).
+- **If they fail:** stop, or register Phase 7 machine learning on this
+  dataset in a new ADR. The candidates and thresholds above are not tuned
+  and re-run.
 
 ---
 
