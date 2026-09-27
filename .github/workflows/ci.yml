@@ -19,9 +19,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.13"
       - name: Install
-        run: python -m pip install -e ".[dev,web]"
+        run: python -m pip install -e ".[dev,web,ml]"
       - name: Lint
         run: ruff check tradenow tests
       - name: Type check

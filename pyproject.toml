@@ -2,13 +2,15 @@
 name = "tradenow"
 version = "0.1.0"
 description = "Offline gold research with synthetic MGC and historical GLD"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = []
 
 [project.optional-dependencies]
 web = ["uvicorn>=0.30,<1"]
 # Exact pins so every machine and CI run checks the code the same way.
 dev = ["ruff==0.16.9", "mypy==2.3.1"]
+# Phase 7 models (ADR-012), pinned exactly so a library update cannot change a result.
+ml = ["scikit-learn==1.9.1", "numpy==2.5.3", "scipy==1.18.1"]
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -31,14 +33,14 @@ select = ["E", "F", "W", "I", "B", "UP"]
 ignore = ["E501", "B008", "UP017"]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.13"
 files = ["tradenow"]
 warn_unused_configs = true
 warn_unused_ignores = true
 warn_redundant_casts = true
 
 [[tool.mypy.overrides]]
-module = ["uvicorn"]
+module = ["uvicorn", "sklearn.*"]
 ignore_missing_imports = true
 
 [tool.ruff.lint.isort]
