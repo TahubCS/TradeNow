@@ -197,6 +197,14 @@ class PaperStore:
             raise PaperBlocked("PLAN_TAMPERED", "the saved order ID does not match the plan")
         return plan
 
+    def latest_plan(self) -> dict | None:
+        """The most recently written plan, verified like any plan being submitted."""
+        paths = [path for path in self.plans_dir.glob("*.json")
+                 if PLAN_ID.fullmatch(path.stem)] if self.plans_dir.exists() else []
+        if not paths:
+            return None
+        return self.load_plan(max(paths, key=lambda path: path.stat().st_mtime).stem)
+
 
 def _client_order_id(plan: dict) -> str:
     session = datetime.fromisoformat(plan["session_open"]).date()
@@ -298,7 +306,8 @@ def paper_status(client: BrokerClient, store: PaperStore) -> dict:
                     "cash": account.cash, "equity": account.equity,
                     "trading_blocked": account.trading_blocked},
         "clock": {"timestamp": clock.timestamp.isoformat(), "is_open": clock.is_open,
-                  "next_open": clock.next_open.isoformat()},
+                  "next_open": clock.next_open.isoformat(),
+                  "next_close": clock.next_close.isoformat()},
         "reconciliation": {"ok": result.ok, "ledger_shares": result.expected_shares,
                            "alpaca_shares": result.broker_shares,
                            "open_orders": result.open_orders, "problems": result.problems},

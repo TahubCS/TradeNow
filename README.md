@@ -152,17 +152,29 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m tradenow web
 ```
 
-Visit `http://127.0.0.1:8000`. The server binds to your computer only. Use
-**Replay imported GLD** to display the latest saved Tiingo import without
-another API request, or select a local MGC or GLD CSV. The dashboard displays
-price and equity charts, candidate selection, fills, unfilled orders, and risk
-decisions. MGC runs also show contract transitions and the stress suite.
-Browser-selected files are sent only to the local server,
-analyzed in memory, and not saved by the dashboard. There are no brokerage
-endpoints, Databento calls, or remote assets in the dashboard. The API limits file sizes, seeds,
-and bar counts so accidental requests remain bounded. Stop
-the service with Ctrl+C. Uvicorn is the only optional runtime dependency; the
-research commands above remain standard-library-only.
+Visit `http://127.0.0.1:8000`. The server binds to your computer only. The
+page follows your system's light or dark setting and works down to phone width.
+
+- **Research** replays the latest imported GLD history by default (no API
+  request), or synthetic MGC bars, a local MGC/GLD CSV, or the stress suite. It
+  shows holdout stat tiles, the drawdown-halt outcome (with the reminder that it
+  is not a guaranteed stop), price and equity charts with fill markers, the
+  benchmark, slippage, and rolling-window evaluation for GLD, candidate
+  selection with the development/validation/holdout timeline, fills, risk
+  decisions, and unfilled orders. Hover or use the arrow keys on a chart to
+  read values. Browser-selected files are sent only to the local server,
+  analysed in memory, and not saved. This tab makes no brokerage, Databento,
+  or Tiingo calls.
+- **Paper trading** (`#paper`) is a read-only view of the Alpaca paper account:
+  kill-switch state, equity, cash, position, market clock, drawdown against the
+  10% limit, reconciliation, the latest saved plan with its approve command,
+  and recent orders. It calls Alpaca's read-only endpoints only when the tab is
+  opened or refreshed. It cannot plan, submit, cancel, or change the kill
+  switch; those stay in the CLI.
+
+The API limits file sizes, seeds, and bar counts so accidental requests remain
+bounded. Stop the service with Ctrl+C. Uvicorn is the only optional runtime
+dependency; the research commands above remain standard-library-only.
 
 `python -m tradenow offline` is the synthetic workflow. It saves generated bars, a full
 JSON audit record, and a readable Markdown report under `artifacts/offline/`.

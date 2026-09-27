@@ -259,6 +259,16 @@ class PaperWorkflowTests(unittest.TestCase):
         with self.assertRaisesRegex(PaperBlocked, "PLAN_TAMPERED"):
             paper_submit(self.broker, self.store, plan["plan_id"])
 
+    def test_dashboard_view_shows_latest_plan_without_side_effects(self):
+        from tradenow.web import paper_view
+        self.assertIsNone(paper_view(self.store, self.broker)["latest_plan"])
+        plan = self.plan()
+        view = paper_view(self.store, self.broker)
+        self.assertEqual(view["latest_plan"]["plan_id"], plan["plan_id"])
+        self.assertTrue(view["status"]["reconciliation"]["ok"])
+        self.assertIsNone(view["status"]["kill_switch"])
+        self.assertEqual(self.broker.submissions, 0)
+
     def test_live_account_is_refused(self):
         self.broker.paper = False
         with self.assertRaisesRegex(PaperBlocked, "NOT_PAPER_ACCOUNT"):

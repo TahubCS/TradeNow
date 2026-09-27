@@ -1,4 +1,5 @@
-"""Local ASGI dashboard for offline simulations and in-memory CSV analysis."""
+"""Local ASGI dashboard for offline simulations, in-memory CSV analysis, and a
+read-only view of the Alpaca paper account."""
 
 import asyncio
 import csv
@@ -9,7 +10,9 @@ from pathlib import Path
 from urllib.parse import parse_qs
 
 from .gld_research import MAX_GLD_CSV_BYTES, latest_imported_gld, run_gld_csv
+from .alpaca_paper import PaperClient, load_paper_credentials
 from .offline import run_local_csv, run_offline
+from .paper_trading import PaperStore, paper_status
 from .stress import run_stress
 
 
@@ -97,6 +100,18 @@ def _report_view(report: dict, csv_text: str) -> dict:
             "open_contract": holdout["open_contract"]}
 
 
+def paper_view(store: PaperStore | None = None, client=None) -> dict:
+    """Read-only paper snapshot; never plans, submits, or changes the kill switch."""
+    store = store or PaperStore()
+    client = client or PaperClient(load_paper_credentials())
+    return {"status": paper_status(client, store), "latest_plan": store.latest_plan()}
+
+
+def _is_local(scope) -> bool:
+    host = dict(scope.get("headers", [])).get(b"host", b"").decode("ascii", errors="ignore")
+    return re.fullmatch(r"127\.0\.0\.1(?::\d{1,5})?", host) is not None
+
+
 async def _read_csv(receive) -> bytes:
     chunks = []
     size = 0
@@ -170,14 +185,19 @@ async def app(scope, receive, send) -> None:
             days = _number(params, "days", 360, 180, 1000)
             payload = await asyncio.to_thread(simulation_view, seed, days)
         elif path == "/api/simulation/gld":
-            host = dict(scope.get("headers", [])).get(b"host", b"").decode("ascii", errors="ignore")
-            if not re.fullmatch(r"127\.0\.0\.1(?::\d{1,5})?", host):
+            if not _is_local(scope):
                 await _respond(send, 403, b'{"error":"GLD data is local only"}',
                                b"application/json")
                 return
             source_bytes, filename = await asyncio.to_thread(latest_imported_gld)
             payload = await asyncio.to_thread(gld_simulation_view, source_bytes, filename,
                                               "tiingo_eod_import")
+        elif path == "/api/paper/status":
+            if not _is_local(scope):
+                await _respond(send, 403, b'{"error":"Paper account data is local only"}',
+                               b"application/json")
+                return
+            payload = await asyncio.to_thread(paper_view)
         elif path == "/api/stress":
             seeds = _number(params, "seeds", 12, 1, 32)
             days = _number(params, "days", 360, 180, 1000)

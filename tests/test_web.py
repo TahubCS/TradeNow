@@ -27,9 +27,12 @@ class WebTests(unittest.IsolatedAsyncioTestCase):
     async def test_dashboard_and_health_load(self):
         status, body = await request("/")
         self.assertEqual(status, 200)
-        self.assertIn(b"OFFLINE ONLY", body)
+        self.assertIn(b"Offline replay", body)
         self.assertIn(b"priceChart", body)
-        self.assertIn(b"unfilledRows", body)
+        self.assertIn(b"unfilledTable", body)
+        self.assertIn(b"paperView", body)
+        self.assertIn(b"fetchJson('/api/paper/status')", body)
+        self.assertEqual(body.count(b"method: 'POST'"), 1)  # only the local CSV upload
         status, body = await request("/api/health")
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(body)["mode"], "offline_simulation")
@@ -108,3 +111,24 @@ class WebTests(unittest.IsolatedAsyncioTestCase):
                                      "POST", source, headers)
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(body)["data"]["source"], "local_gld_csv")
+
+    async def test_paper_status_is_local_only_and_read_only(self):
+        with patch("tradenow.web.paper_view", return_value={"status": {}, "latest_plan": None}) as view:
+            status, _ = await request("/api/paper/status")
+            self.assertEqual(status, 403)
+            view.assert_not_called()
+            status, body = await request("/api/paper/status",
+                                         headers=[(b"host", b"127.0.0.1:8000")])
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body), {"status": {}, "latest_plan": None})
+        status, _ = await request("/api/paper/status", method="POST",
+                                  headers=[(b"host", b"127.0.0.1:8000")])
+        self.assertEqual(status, 405)
+
+    async def test_paper_status_reports_missing_credentials(self):
+        with patch("tradenow.web.paper_view",
+                   side_effect=ValueError("ALPACA_PAPER_KEY_ID is missing or malformed")):
+            status, body = await request("/api/paper/status",
+                                         headers=[(b"host", b"127.0.0.1:8000")])
+        self.assertEqual(status, 400)
+        self.assertIn("ALPACA_PAPER_KEY_ID", json.loads(body)["error"])

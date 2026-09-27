@@ -3,189 +3,1028 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Tradenow · Offline Research</title>
+  <title>Tradenow</title>
   <style>
-    :root { color-scheme: dark; --bg:#080d19; --panel:#111a2c; --panel2:#15213a; --line:#27344f; --text:#e8eefb; --muted:#96a7c4; --blue:#82a9ff; --mint:#55d6af; --amber:#ffc46b; --red:#ff818d; }
-    * { box-sizing:border-box; }
-    body { margin:0; background:radial-gradient(circle at 76% -12%, #1a3155 0, transparent 34%), var(--bg); color:var(--text); font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif; }
-    .shell { max-width:1280px; margin:auto; padding:24px 28px 64px; }
-    header { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:8px 0 34px; }
-    .brand { display:flex; align-items:center; gap:12px; font-weight:800; letter-spacing:.01em; font-size:20px; }
-    .brand-mark { display:grid; place-items:center; width:34px; height:34px; border-radius:10px; background:linear-gradient(145deg,#65e0b5,#5f8ef9); color:#071224; font-weight:900; }
-    .status-pill { border:1px solid #2e806d; background:#123b37; color:#9af1d4; border-radius:999px; padding:6px 12px; font-size:11px; font-weight:800; letter-spacing:.12em; }
-    h1,h2,h3,p { margin-top:0; }
-    .eyebrow { color:var(--mint); text-transform:uppercase; letter-spacing:.18em; font-size:11px; font-weight:800; margin-bottom:10px; }
-    h1 { font-size:clamp(30px,4vw,48px); line-height:1.08; letter-spacing:-.04em; margin-bottom:12px; }
-    .intro { color:var(--muted); max-width:700px; font-size:16px; }
-    .hero { display:grid; grid-template-columns:1.5fr 1fr; gap:26px; align-items:end; margin-bottom:24px; }
-    .controls { background:linear-gradient(145deg,#172640,#111b2f); border:1px solid #334462; border-radius:18px; padding:20px; box-shadow:0 18px 50px #0004; }
-    .controls h2 { font-size:15px; margin-bottom:14px; }
-    .control-row { display:flex; gap:10px; align-items:end; flex-wrap:wrap; }
-    label { display:block; color:var(--muted); font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.12em; margin-bottom:5px; }
-    input { width:104px; border:1px solid #425372; border-radius:9px; background:#0b1426; color:var(--text); padding:9px 10px; font:inherit; }
-    input:focus,button:focus-visible { outline:2px solid var(--blue); outline-offset:2px; }
-    button { border:0; border-radius:9px; padding:10px 15px; font:700 13px system-ui,sans-serif; cursor:pointer; transition:transform .15s,filter .15s; }
-    button:hover { transform:translateY(-1px); filter:brightness(1.1); }
-    button:disabled { opacity:.55; cursor:wait; transform:none; }
-    .primary { color:#081326; background:linear-gradient(125deg,#80aeff,#8ce0d7); }
-    .secondary { color:#d9e6ff; background:#263855; border:1px solid #496080; }
-    #message { min-height:22px; color:var(--muted); font-size:12px; margin:12px 0 0; }
-    .local-row { border-top:1px solid #334462; margin-top:15px; padding-top:14px; }
-    .local-row input { width:min(100%,350px); font-size:12px; }
-    #sourceInfo,#modelInfo { color:var(--muted); font-size:11px; margin:3px 0 0; overflow-wrap:anywhere; }
-    .grid-metrics { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:12px; margin-bottom:18px; }
-    .card,.panel { background:linear-gradient(160deg,var(--panel),#101827); border:1px solid var(--line); border-radius:16px; }
-    .card { padding:17px 18px; min-height:108px; }
-    .card .label { color:var(--muted); font-size:11px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; }
-    .card .value { font-size:25px; font-weight:800; margin-top:10px; letter-spacing:-.03em; white-space:nowrap; }
-    .card small { color:var(--muted); font-size:11px; }
-    .positive { color:var(--mint)!important; } .negative { color:var(--red)!important; }
-    .charts { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:18px; }
-    .panel { padding:20px; min-width:0; }
-    .panel-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:14px; }
-    .panel h2 { font-size:16px; margin:0; }
-    .panel .sub { font-size:12px; color:var(--muted); margin-top:3px; }
-    .tag { border:1px solid #3a5073; border-radius:7px; padding:4px 8px; color:#afc4e7; font-size:10px; font-weight:800; letter-spacing:.07em; white-space:nowrap; }
-    svg.chart { width:100%; height:240px; display:block; overflow:visible; }
-    .chart-foot { display:flex; justify-content:space-between; color:var(--muted); font-size:11px; margin:4px 4px 0; }
-    .tables { display:grid; grid-template-columns:1.1fr 1fr; gap:16px; margin-bottom:18px; }
-    table { width:100%; border-collapse:collapse; font-size:13px; }
-    th { text-align:left; color:var(--muted); text-transform:uppercase; font-size:10px; letter-spacing:.1em; padding:9px 7px; border-bottom:1px solid var(--line); }
-    td { padding:11px 7px; border-bottom:1px solid #22304b; }
-    tr:last-child td { border-bottom:0; }
-    .right { text-align:right; } .selected { color:var(--mint); font-weight:800; }
-    .scroll { max-height:286px; overflow:auto; }
-    .empty { padding:24px 4px; color:var(--muted); font-size:13px; }
-    .lower { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-    .warning { margin-top:20px; border:1px solid #665735; background:#282418; color:#ddc693; border-radius:12px; padding:12px 16px; font-size:12px; }
-    #stressPanel[hidden],#evaluationPanel[hidden] { display:none; }
-    .pass { color:var(--mint); } .fail { color:var(--red); }
-    @media(max-width:1000px) { .hero,.charts,.tables,.lower { grid-template-columns:1fr; } .grid-metrics { grid-template-columns:repeat(3,1fr); } }
-    @media(max-width:620px) { .shell { padding:17px 15px 42px; } header { padding-bottom:22px; } .grid-metrics { grid-template-columns:repeat(2,1fr); } .card .value { font-size:21px; } .panel { padding:15px; } .controls { padding:15px; } }
+    /* ---------- tokens: light is the base, dark swaps the same roles ---------- */
+    :root {
+      color-scheme: light;
+      --page: #f4f4f1; --surface: #fcfcfb; --surface-2: #f0efeb; --surface-3: #e7e6e0;
+      --ink: #0b0b0b; --ink-2: #52514e; --muted: #6b6a66; --axis-ink: #898781;
+      --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,.10); --border-strong: rgba(11,11,11,.18);
+      --accent: #2a78d6; --accent-ink: #ffffff; --accent-soft: #e3eefb;
+      --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a;
+      --period-1: #b7d3f6; --period-2: #6da7ec; --period-3: #1c5cab;
+      --good: #0ca30c; --warn: #fab219; --serious: #ec835a; --crit: #d03b3b;
+      --up: #006300; --down: #b42318;
+      --shadow: 0 1px 2px rgba(11,11,11,.05), 0 4px 16px rgba(11,11,11,.04);
+      --radius: 14px;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        color-scheme: dark;
+        --page: #0d0d0d; --surface: #1a1a19; --surface-2: #232321; --surface-3: #2e2e2b;
+        --ink: #ffffff; --ink-2: #c3c2b7; --muted: #a09f97; --axis-ink: #898781;
+        --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,.10); --border-strong: rgba(255,255,255,.18);
+        --accent: #3987e5; --accent-ink: #ffffff; --accent-soft: #1b2a3d;
+        --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
+        --period-1: #184f95; --period-2: #2a78d6; --period-3: #86b6ef;
+        --up: #0ca30c; --down: #f07171;
+        --shadow: none;
+      }
+    }
+
+    /* ---------- base ---------- */
+    * { box-sizing: border-box; }
+    html { background: var(--page); }
+    body { margin: 0; background: var(--page); color: var(--ink);
+           font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+    h1, h2, h3, p { margin: 0; }
+    h1 { font-size: clamp(22px, 3vw, 28px); line-height: 1.2; letter-spacing: -.01em; }
+    h2 { font-size: 15px; line-height: 1.3; }
+    h3 { font-size: 13px; line-height: 1.3; }
+    code, .mono { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 12.5px; }
+    [hidden] { display: none !important; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+    /* ---------- top bar ---------- */
+    .topbar { position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--page) 88%, transparent);
+              backdrop-filter: blur(10px); border-bottom: 1px solid var(--border); }
+    .topbar-inner { max-width: 1240px; margin: 0 auto; padding: 10px clamp(16px, 3vw, 32px);
+                    display: flex; align-items: center; gap: 12px 20px; flex-wrap: wrap; }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; }
+    .brand-mark { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px;
+                  background: var(--accent); color: var(--accent-ink); font-weight: 800; font-size: 14px; }
+    .tabs { display: flex; gap: 2px; padding: 3px; background: var(--surface-2); border: 1px solid var(--border);
+            border-radius: 10px; }
+    .tabs a { padding: 6px 14px; border-radius: 7px; color: var(--ink-2); text-decoration: none; font-weight: 600; font-size: 13px; }
+    .tabs a:hover { color: var(--ink); }
+    .tabs a[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+    .mode-pill { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px;
+                 border: 1px solid var(--border); border-radius: 999px; font-size: 12px; font-weight: 600; color: var(--ink-2);
+                 background: var(--surface); white-space: nowrap; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--axis-ink); flex: none; }
+    .dot.good { background: var(--good); } .dot.warn { background: var(--warn); } .dot.crit { background: var(--crit); }
+
+    /* ---------- page layout ---------- */
+    .page { max-width: 1240px; margin: 0 auto; padding: 24px clamp(16px, 3vw, 32px) 56px; }
+    .view { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); }
+    .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px 24px; flex-wrap: wrap; }
+    .lede { color: var(--ink-2); max-width: 72ch; margin-top: 4px; }
+    .grid { display: grid; gap: 16px; }
+    .grid.two { grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); }
+    .grid.wide-narrow { grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); }
+    @media (min-width: 1000px) { .grid.wide-narrow { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); } }
+    .section-title { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+    .section-title p { color: var(--ink-2); font-size: 13px; }
+
+    /* ---------- cards ---------- */
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+            box-shadow: var(--shadow); padding: 18px; min-width: 0; }
+    .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; margin-bottom: 14px; }
+    .card-head .sub { color: var(--ink-2); font-size: 12.5px; margin-top: 2px; }
+    .card-foot { color: var(--ink-2); font-size: 12.5px; margin-top: 12px; }
+    .chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 6px;
+            background: var(--surface-2); border: 1px solid var(--border); color: var(--ink-2);
+            font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+
+    /* ---------- controls ---------- */
+    .toolbar { display: grid; gap: 14px; }
+    .toolbar-row { display: flex; align-items: flex-end; gap: 12px 16px; flex-wrap: wrap; }
+    .segmented { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; margin: 0; border: 1px solid var(--border);
+                 background: var(--surface-2); border-radius: 10px; }
+    .segmented legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+    .segmented label { position: relative; padding: 7px 13px; border-radius: 7px; cursor: pointer; font-weight: 600;
+                       font-size: 13px; color: var(--ink-2); }
+    .segmented input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+    .segmented label:has(input:checked) { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+    .segmented label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .source-fields { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; flex: 1 1 260px; min-height: 38px; }
+    .field { display: grid; gap: 4px; }
+    .field > span { font-size: 12px; font-weight: 600; color: var(--ink-2); }
+    .field input[type="number"] { width: 110px; }
+    input[type="number"] { height: 36px; padding: 0 10px; border: 1px solid var(--border-strong); border-radius: 8px;
+                           background: var(--surface); color: var(--ink); font: inherit; }
+    .hint { color: var(--ink-2); font-size: 13px; align-self: center; }
+    .file-picker { display: flex; align-items: center; gap: 10px; min-width: 0; flex-wrap: wrap; }
+    .file-name { color: var(--ink-2); font-size: 13px; overflow-wrap: anywhere; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 36px; padding: 0 16px;
+           border-radius: 8px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--ink);
+           font: 600 13px system-ui, -apple-system, "Segoe UI", sans-serif; cursor: pointer; white-space: nowrap; }
+    .btn:hover { background: var(--surface-2); }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+    .btn.primary:hover { filter: brightness(1.08); }
+    .btn:disabled { opacity: .6; cursor: progress; }
+    .btn.small { height: 28px; padding: 0 10px; font-size: 12px; }
+    .status-line { font-size: 13px; color: var(--ink-2); min-height: 20px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .status-line.error { color: var(--down); }
+    .provenance { display: flex; gap: 6px; flex-wrap: wrap; }
+    .loading { opacity: .5; transition: opacity .2s; pointer-events: none; }
+
+    /* ---------- stat tiles ---------- */
+    .tiles { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); }
+    .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow);
+            padding: 14px 16px; min-width: 0; display: grid; gap: 4px; align-content: start; }
+    .tile-label { font-size: 12.5px; color: var(--ink-2); font-weight: 500; }
+    .tile-value { font-size: 22px; font-weight: 650; letter-spacing: -.01em; line-height: 1.25; overflow-wrap: anywhere; }
+    .tile-note { font-size: 12px; color: var(--muted); }
+    .up { color: var(--up); } .down { color: var(--down); }
+
+    /* ---------- meter ---------- */
+    .meter { height: 8px; border-radius: 4px; background: var(--accent-soft); overflow: hidden; margin-top: 6px; }
+    .meter > span { display: block; height: 100%; border-radius: 4px; background: var(--accent); }
+    .meter.warn > span { background: var(--warn); } .meter.crit > span { background: var(--crit); }
+
+    /* ---------- callouts & badges ---------- */
+    .callout { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border-radius: 12px;
+               border: 1px solid var(--border); background: var(--surface); border-left-width: 4px; }
+    .callout.warn { border-left-color: var(--warn); } .callout.crit { border-left-color: var(--crit); }
+    .callout.good { border-left-color: var(--good); } .callout.info { border-left-color: var(--accent); }
+    .callout-icon { flex: none; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+                    font-size: 12px; font-weight: 800; color: #fff; background: var(--accent); }
+    .callout.warn .callout-icon { background: var(--warn); color: #0b0b0b; }
+    .callout.crit .callout-icon { background: var(--crit); } .callout.good .callout-icon { background: var(--good); }
+    .callout h3 { font-size: 14px; margin-bottom: 2px; }
+    .callout p { color: var(--ink-2); font-size: 13px; }
+    .badge { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border-radius: 999px; font-size: 11.5px;
+             font-weight: 650; white-space: nowrap; border: 1px solid var(--border); background: var(--surface-2); color: var(--ink); }
+    .badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--axis-ink); }
+    .badge.good::before { background: var(--good); } .badge.warn::before { background: var(--warn); }
+    .badge.crit::before { background: var(--crit); } .badge.accent::before { background: var(--accent); }
+    .note { font-size: 12.5px; color: var(--ink-2); padding: 12px 16px; border: 1px dashed var(--border-strong); border-radius: 12px; }
+
+    /* ---------- tables ---------- */
+    .table-wrap { overflow: auto; max-height: 340px; border: 1px solid var(--border); border-radius: 10px; }
+    .table-wrap.tall { max-height: 420px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { position: sticky; top: 0; z-index: 1; background: var(--surface-2); text-align: left; font-size: 11.5px;
+         font-weight: 600; color: var(--ink-2); padding: 8px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    td { padding: 8px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    tbody tr:last-child td { border-bottom: 0; }
+    tbody tr:hover td { background: var(--surface-2); }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 12px; color: var(--ink-2); }
+    .strong { font-weight: 650; }
+    .empty { padding: 20px 12px; color: var(--ink-2); font-size: 13px; text-align: center; }
+    details.table-view { margin-top: 12px; }
+    details.table-view summary { cursor: pointer; color: var(--ink-2); font-size: 13px; font-weight: 600; }
+    details.table-view[open] summary { margin-bottom: 10px; }
+
+    /* ---------- charts ---------- */
+    .chart { position: relative; width: 100%; }
+    .chart svg { display: block; width: 100%; overflow: visible; }
+    .chart svg:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
+    .chart-scroll { overflow-x: auto; }
+    .axis-text { fill: var(--axis-ink); font-size: 11px; font-variant-numeric: tabular-nums; }
+    .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--ink-2); }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .key-line { width: 14px; height: 2px; border-radius: 1px; background: currentColor; }
+    .key-box { width: 10px; height: 10px; border-radius: 3px; }
+    .key-glyph { font-size: 10px; line-height: 1; }
+    .tooltip { position: absolute; z-index: 5; pointer-events: none; min-width: 150px; padding: 8px 10px; border-radius: 8px;
+               background: var(--surface); border: 1px solid var(--border-strong); box-shadow: 0 6px 20px rgba(0,0,0,.18);
+               font-size: 12px; color: var(--ink-2); }
+    .tooltip .tt-value { color: var(--ink); font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; }
+    .tooltip .tt-row { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+    .tooltip .tt-row b { color: var(--ink); font-variant-numeric: tabular-nums; }
+
+    /* ---------- timeline ---------- */
+    .timeline { display: flex; gap: 2px; height: 10px; border-radius: 5px; overflow: hidden; margin: 4px 0 8px; }
+    .timeline span:nth-child(1) { background: var(--period-1); } .timeline span:nth-child(2) { background: var(--period-2); }
+    .timeline span:nth-child(3) { background: var(--period-3); }
+    .timeline-labels { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px 12px; font-size: 12px; color: var(--ink-2); }
+    .timeline-labels b { display: flex; align-items: center; gap: 6px; color: var(--ink); font-weight: 600; }
+
+    /* ---------- key/value lists ---------- */
+    dl.kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 16px; margin: 0; font-size: 13px; }
+    dl.kv dt { color: var(--ink-2); } dl.kv dd { margin: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+    .command { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 12px; border-radius: 8px;
+               background: var(--surface-2); border: 1px solid var(--border); }
+    .command code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; }
+    ol.steps { margin: 0; padding-left: 20px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; color: var(--ink-2); font-size: 13px; }
+    ol.steps li::marker { color: var(--ink); font-weight: 650; }
+    ul.problems { margin: 8px 0 0; padding-left: 18px; color: var(--ink-2); font-size: 13px; }
+
+    @media (max-width: 560px) {
+      .card { padding: 14px; }
+      .mode-pill { margin-left: 0; }
+      .tile-value { font-size: 19px; }
+    }
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
   </style>
 </head>
 <body>
-  <main class="shell">
-    <header><div class="brand"><span class="brand-mark">T</span> Tradenow <span style="color:#6d819f;font-weight:500">/ research lab</span></div><span class="status-pill">● OFFLINE ONLY</span></header>
-    <section class="hero">
-      <div><p class="eyebrow" id="instrumentEyebrow">Micro Gold · Offline Research</p><h1>See every decision<br>before any real trade.</h1><p class="intro" id="instrumentIntro">Replay synthetic or locally supplied MGC bars, compare hypotheses, and inspect the holdout portfolio. This dashboard never contacts a brokerage or market-data provider.</p></div>
-      <form class="controls" id="runForm"><h2>Simulation controls</h2><div class="control-row"><div><label for="seed">Seed</label><input id="seed" type="number" min="0" max="1000000" value="3" required></div><div><label for="days">Bars</label><input id="days" type="number" min="180" max="1000" value="360" required></div><button class="primary" id="runButton" type="submit">Run simulation</button><button class="secondary" id="stressButton" type="button">Stress suite</button></div><div class="local-row"><button class="primary" id="gldButton" type="button">Replay imported GLD</button><p class="sub">Uses the latest private Tiingo CSV already saved on this computer.</p></div><div class="local-row"><label for="localFile">Local MGC CSV ≤1 MB or GLD CSV ≤2 MB</label><div class="control-row"><input id="localFile" type="file" accept=".csv,text/csv"><button class="secondary" id="localButton" type="button">Analyze local CSV</button></div></div><p id="message" role="status" aria-live="polite">Ready to replay.</p><p id="sourceInfo"></p><p id="modelInfo"></p></form>
-    </section>
-    <section class="grid-metrics" aria-label="Holdout metrics">
-      <div class="card"><div class="label">Holdout P&amp;L</div><div class="value" id="metricPnl">—</div><small>Includes open P&amp;L</small></div>
-      <div class="card"><div class="label">Selected</div><div class="value" id="metricStrategy">—</div><small>Validation only</small></div>
-      <div class="card"><div class="label">Max drawdown</div><div class="value" id="metricDrawdown">—</div><small>Closing equity</small></div>
-      <div class="card"><div class="label">Fills</div><div class="value" id="metricFills">—</div><small>Simulated orders</small></div>
-      <div class="card"><div class="label">End position</div><div class="value" id="metricPosition">—</div><small id="positionContractLabel">MGC_SIM contracts</small></div>
-    </section>
-    <section class="charts">
-      <article class="panel"><div class="panel-head"><div><h2 id="priceTitle">MGC price</h2><div class="sub">Holdout close · buy and sell markers</div></div><span class="tag" id="contractTag">MGC_SIM</span></div><svg class="chart" id="priceChart" role="img" aria-label="MGC price chart"></svg><div class="chart-foot" id="priceDates"></div></article>
-      <article class="panel"><div class="panel-head"><div><h2>Portfolio equity</h2><div class="sub">Marked to each simulated close</div></div><span class="tag">USD · SIMULATED</span></div><svg class="chart" id="equityChart" role="img" aria-label="Portfolio equity chart"></svg><div class="chart-foot" id="equityDates"></div></article>
-    </section>
-    <section class="tables">
-      <article class="panel"><div class="panel-head"><div><h2>Hypothesis selection</h2><div class="sub">Score = validation return % − max drawdown %</div></div><span class="tag" id="runId">RUN —</span></div><div class="scroll"><table><thead><tr><th>Candidate</th><th class="right">Development P&amp;L</th><th class="right">Validation P&amp;L</th><th class="right">Score</th></tr></thead><tbody id="candidateRows"></tbody></table></div></article>
-      <article class="panel"><div class="panel-head"><div><h2>Simulated fills</h2><div class="sub" id="fillSubtitle">Next open or scheduled roll close</div></div><span class="tag">READ ONLY</span></div><div class="scroll"><table><thead><tr><th>Date</th><th id="fillInstrumentHeading">Contract</th><th>Side</th><th id="fillPointHeading">Point</th><th class="right">Price</th><th class="right" id="fillGapHeading">Open gap</th></tr></thead><tbody id="fillRows"></tbody></table><div class="empty" id="emptyFills" hidden>No fills. The selection gate or signal chose no trade.</div></div></article>
-    </section>
-    <section class="lower">
-      <article class="panel"><div class="panel-head"><div><h2>Risk decisions</h2><div class="sub">Every simulated order follows a risk decision</div></div></div><p class="sub" id="drawdownStatus" hidden></p><div class="scroll"><table><thead><tr><th>Date</th><th>Action</th><th>Status</th><th>Reason</th></tr></thead><tbody id="riskRows"></tbody></table><div class="empty" id="emptyRisk" hidden>No orders were proposed during this holdout.</div></div><h2 style="margin-top:20px">Unfilled orders</h2><p class="sub" id="rollSummary"></p><div class="scroll"><table><thead><tr><th>Date</th><th id="unfilledInstrumentHeading">Contract</th><th>Side</th><th>Reason</th></tr></thead><tbody id="unfilledRows"></tbody></table><div class="empty" id="emptyUnfilled">No unfilled orders.</div></div></article>
-      <article class="panel" id="stressPanel" hidden><div class="panel-head"><div><h2>Stress suite</h2><div class="sub" id="stressSummary">Synthetic seeds and fault injections</div></div><span class="tag" id="stressStatus">—</span></div><div class="scroll"><table><thead><tr><th>Seed</th><th>Selection</th><th class="right">Holdout P&amp;L</th><th>Status</th></tr></thead><tbody id="stressRows"></tbody></table></div><p class="sub" id="faultSummary" style="margin-top:14px"></p></article>
-      <article class="panel" id="guidePanel"><div class="panel-head"><div><h2>How to read this run</h2><div class="sub">One pass from evidence to execution</div></div></div><p id="guideText" style="color:var(--muted);margin:0">Three fixed moving-average hypotheses are measured on development and validation segments. Only validation chooses the holdout strategy. If every score is nonpositive, the system holds cash. Each period starts flat, and the order manager enforces risk approval and deduplicates simulated order IDs.</p><p class="sub" id="periodLabel" style="margin:16px 0 0"></p></article>
-    </section>
-    <section class="panel" id="evaluationPanel" hidden>
-      <div class="panel-head"><div><h2>GLD evaluation</h2><div class="sub">Holdout benchmarks, trading costs, and earlier rolling tests</div></div><span class="tag">HISTORICAL</span></div>
-      <div class="tables">
-        <div><h3>Holdout comparison</h3><div class="scroll"><table><thead><tr><th>Portfolio</th><th class="right">Return</th><th class="right">Annualized</th><th class="right">Drawdown</th></tr></thead><tbody id="benchmarkRows"></tbody></table></div><p class="sub" id="turnoverSummary"></p></div>
-        <div><h3>Slippage sensitivity</h3><p class="sub">Selected strategy stays fixed</p><div class="scroll"><table><thead><tr><th>Per share</th><th class="right">Return</th><th class="right">Fills</th></tr></thead><tbody id="slippageRows"></tbody></table></div></div>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">T</span>Tradenow</div>
+      <nav class="tabs" role="tablist" aria-label="Views">
+        <a href="#research" role="tab" id="tabResearch" aria-controls="researchView" aria-selected="true">Research</a>
+        <a href="#paper" role="tab" id="tabPaper" aria-controls="paperView" aria-selected="false">Paper trading</a>
+      </nav>
+      <span class="mode-pill" id="modePill"><span class="dot" id="modeDot"></span><span id="modeText">Offline replay · no broker calls</span></span>
+    </div>
+  </header>
+
+  <main class="page">
+    <!-- ================= RESEARCH ================= -->
+    <section class="view" id="researchView" role="tabpanel" aria-labelledby="tabResearch">
+      <div class="page-head">
+        <div>
+          <h1 id="researchTitle">Research replay</h1>
+          <p class="lede" id="researchLede">Replay historical or synthetic bars, compare fixed hypotheses, and inspect every holdout decision. Nothing on this tab contacts a broker or data provider.</p>
+        </div>
       </div>
-      <h3>Rolling tests before the final holdout</h3><p class="sub" id="rollingSummary"></p>
-      <div class="scroll"><table><thead><tr><th>Test dates</th><th>Selected</th><th class="right">Strategy return</th><th class="right">50% buy and hold</th></tr></thead><tbody id="rollingRows"></tbody></table></div>
-      <p class="sub" style="margin:14px 0 0">Each rolling test starts flat; the strategy warms up its SMA while buy-and-hold enters at the first open. Cash assumes zero interest. Benchmarks do not use the strategy drawdown halt.</p>
+
+      <form class="card toolbar" id="runForm" aria-label="Run a replay">
+        <div class="toolbar-row">
+          <fieldset class="segmented" id="sourcePicker">
+            <legend>Data source</legend>
+            <label><input type="radio" name="source" value="gld" checked>Imported GLD</label>
+            <label><input type="radio" name="source" value="synthetic">Synthetic MGC</label>
+            <label><input type="radio" name="source" value="local">Local CSV</label>
+            <label><input type="radio" name="source" value="stress">Stress suite</label>
+          </fieldset>
+          <div class="source-fields">
+            <p class="hint" data-source="gld">Latest private Tiingo import on this computer · no API request</p>
+            <div data-source="synthetic" class="toolbar-row" hidden>
+              <label class="field"><span>Seed</span><input id="seed" type="number" min="0" max="1000000" value="3" required></label>
+              <label class="field"><span>Bars</span><input id="days" type="number" min="180" max="1000" value="360" required></label>
+            </div>
+            <div data-source="local" class="file-picker" hidden>
+              <input id="localFile" class="sr-only" type="file" accept=".csv,text/csv">
+              <label for="localFile" class="btn">Choose CSV…</label>
+              <span class="file-name" id="fileName">MGC ≤ 1 MB or GLD ≤ 2 MB · analysed in memory, never saved</span>
+            </div>
+            <p class="hint" data-source="stress" hidden>12 synthetic seeds replayed twice, plus injected faults</p>
+          </div>
+          <button class="btn primary" id="runButton" type="submit">Run replay</button>
+        </div>
+        <p class="status-line" id="message" role="status" aria-live="polite">Ready.</p>
+      </form>
+
+      <!-- replay results -->
+      <div id="runContent" class="view" hidden>
+        <div class="provenance" id="provenance"></div>
+        <section class="tiles" aria-label="Holdout summary">
+          <div class="tile"><span class="tile-label">Holdout P&amp;L</span><span class="tile-value" id="tPnl">—</span><span class="tile-note" id="tPnlNote">Includes open position</span></div>
+          <div class="tile"><span class="tile-label">Holdout return</span><span class="tile-value" id="tReturn">—</span><span class="tile-note" id="tReturnNote">Of starting cash</span></div>
+          <div class="tile"><span class="tile-label">Selected strategy</span><span class="tile-value" id="tStrategy">—</span><span class="tile-note">Chosen on validation only</span></div>
+          <div class="tile"><span class="tile-label">Max drawdown</span><span class="tile-value" id="tDrawdown">—</span><span class="tile-note">Closing equity</span></div>
+          <div class="tile"><span class="tile-label">Fills</span><span class="tile-value" id="tFills">—</span><span class="tile-note" id="tFillsNote">Simulated orders</span></div>
+          <div class="tile"><span class="tile-label">End position</span><span class="tile-value" id="tPosition">—</span><span class="tile-note" id="tPositionNote">Contracts</span></div>
+        </section>
+
+        <div class="callout" id="haltCallout" hidden>
+          <span class="callout-icon" aria-hidden="true">!</span>
+          <div><h3 id="haltTitle"></h3><p id="haltText"></p></div>
+        </div>
+
+        <section class="grid two">
+          <article class="card">
+            <div class="card-head">
+              <div><h2 id="priceTitle">Price</h2><p class="sub">Holdout daily close with simulated fills</p></div>
+              <div class="legend" id="priceLegend">
+                <span><span class="key-line" style="color:var(--series-1)"></span>Close</span>
+                <span><span class="key-glyph" style="color:var(--series-3)">▲</span>Buy fill</span>
+                <span><span class="key-glyph" style="color:var(--series-2)">▼</span>Sell fill</span>
+              </div>
+            </div>
+            <div class="chart" id="priceChart"></div>
+          </article>
+          <article class="card">
+            <div class="card-head">
+              <div><h2>Portfolio equity</h2><p class="sub">Cash plus open position, marked at each close</p></div>
+              <span class="chip">USD · simulated</span>
+            </div>
+            <div class="chart" id="equityChart"></div>
+          </article>
+        </section>
+
+        <!-- GLD-only evaluation -->
+        <section class="view" id="evaluation" hidden>
+          <div class="section-title"><h2>Evaluation</h2><p>Is the holdout result better than doing nothing simple?</p></div>
+          <div class="grid wide-narrow">
+            <article class="card">
+              <div class="card-head"><div><h2>Holdout vs benchmarks</h2><p class="sub" id="turnover"></p></div><span class="chip" id="holdoutDays"></span></div>
+              <div class="table-wrap" id="benchmarkTable"></div>
+            </article>
+            <article class="card">
+              <div class="card-head"><div><h2>Slippage sensitivity</h2><p class="sub">Selected strategy fixed; only cost changes</p></div></div>
+              <div class="table-wrap" id="slippageTable"></div>
+            </article>
+          </div>
+          <article class="card">
+            <div class="card-head">
+              <div><h2>Rolling tests before the holdout</h2><p class="sub" id="rollingSummary"></p></div>
+              <div class="legend">
+                <span><span class="key-box" style="background:var(--series-1)"></span>Strategy</span>
+                <span><span class="key-box" style="background:var(--series-2)"></span>Buy and hold, 50%</span>
+              </div>
+            </div>
+            <div class="chart-scroll"><div class="chart" id="rollingChart"></div></div>
+            <details class="table-view"><summary>Show rolling test table</summary><div class="table-wrap tall" id="rollingTable"></div></details>
+            <p class="card-foot">Each window selects a strategy on earlier bars only, then tests the next 126 bars from flat. The strategy warms up its moving averages inside each test; buy-and-hold enters at the first open. Cash earns zero interest.</p>
+          </article>
+        </section>
+
+        <section class="grid two">
+          <article class="card">
+            <div class="card-head"><div><h2>Hypothesis selection</h2><p class="sub">Score = validation return % − validation max drawdown %</p></div><span class="chip" id="runChip"></span></div>
+            <div class="table-wrap" id="candidateTable"></div>
+            <div class="card-foot">
+              <div class="timeline" id="timeline" aria-hidden="true"><span></span><span></span><span></span></div>
+              <div class="timeline-labels" id="timelineLabels"></div>
+              <p style="margin-top:10px">A nonpositive best score means no trade. The holdout never influences selection.</p>
+            </div>
+          </article>
+          <article class="card">
+            <div class="card-head"><div><h2>Fills</h2><p class="sub" id="fillSub">Next-open orders</p></div><span class="chip" id="fillCount"></span></div>
+            <div class="table-wrap" id="fillTable"></div>
+          </article>
+        </section>
+
+        <section class="grid two">
+          <article class="card">
+            <div class="card-head"><div><h2>Risk decisions</h2><p class="sub">Every order passes a risk check first</p></div></div>
+            <div class="table-wrap" id="riskTable"></div>
+          </article>
+          <article class="card">
+            <div class="card-head"><div><h2>Unfilled orders</h2><p class="sub" id="unfilledSub"></p></div></div>
+            <div class="table-wrap" id="unfilledTable"></div>
+          </article>
+        </section>
+      </div>
+
+      <!-- stress results -->
+      <div id="stressContent" class="view" hidden>
+        <section class="tiles" aria-label="Stress summary">
+          <div class="tile"><span class="tile-label">Result</span><span class="tile-value" id="sResult">—</span><span class="tile-note">All checks must pass</span></div>
+          <div class="tile"><span class="tile-label">Seeds</span><span class="tile-value" id="sSeeds">—</span><span class="tile-note" id="sSeedsNote"></span></div>
+          <div class="tile"><span class="tile-label">Faults caught</span><span class="tile-value" id="sFaults">—</span><span class="tile-note">Injected failures</span></div>
+          <div class="tile"><span class="tile-label">No-trade selections</span><span class="tile-value" id="sNoTrade">—</span><span class="tile-note">Selection gate held cash</span></div>
+        </section>
+        <section class="grid two">
+          <article class="card"><div class="card-head"><div><h2>Seed replays</h2><p class="sub">Each seed replayed twice; results must match</p></div></div><div class="table-wrap tall" id="seedTable"></div></article>
+          <article class="card"><div class="card-head"><div><h2>Fault injection</h2><p class="sub">Each fault must be detected, not absorbed</p></div></div><div class="table-wrap tall" id="faultTable"></div></article>
+        </section>
+      </div>
+
+      <p class="note" id="researchNote">Simulation only. Results are not expected returns.</p>
     </section>
-    <aside class="warning" id="warningText">SIMULATION ONLY · Prices are fictional. Margin is illustrative; missing timestamps cannot verify session hours. Exchange holidays, market impact, and brokerage fills are not modeled. No Databento credits or real money are used.</aside>
+
+    <!-- ================= PAPER ================= -->
+    <section class="view" id="paperView" role="tabpanel" aria-labelledby="tabPaper" hidden>
+      <div class="page-head">
+        <div>
+          <h1>Paper trading</h1>
+          <p class="lede">Read-only view of the Alpaca <b>paper</b> account. Plans, approvals, and the kill switch are run from the command line, so this page can never place an order.</p>
+        </div>
+        <div class="toolbar-row">
+          <span class="status-line" id="paperChecked" role="status" aria-live="polite"></span>
+          <button class="btn" id="paperRefresh" type="button">Refresh</button>
+        </div>
+      </div>
+
+      <div class="callout crit" id="paperError" hidden>
+        <span class="callout-icon" aria-hidden="true">✕</span>
+        <div><h3>Could not read the paper account</h3><p id="paperErrorText"></p></div>
+      </div>
+
+      <div id="paperContent" class="view" hidden>
+        <div class="callout" id="killCallout">
+          <span class="callout-icon" aria-hidden="true" id="killIcon"></span>
+          <div><h3 id="killTitle"></h3><p id="killText"></p></div>
+        </div>
+
+        <section class="tiles" aria-label="Paper account">
+          <div class="tile"><span class="tile-label">Equity</span><span class="tile-value" id="pEquity">—</span><span class="tile-note" id="pEquityNote"></span></div>
+          <div class="tile"><span class="tile-label">Cash</span><span class="tile-value" id="pCash">—</span><span class="tile-note">Sizing uses cash, never margin</span></div>
+          <div class="tile"><span class="tile-label">GLD position</span><span class="tile-value" id="pShares">—</span><span class="tile-note" id="pSharesNote"></span></div>
+          <div class="tile"><span class="tile-label">Market</span><span class="tile-value" id="pMarket">—</span><span class="tile-note" id="pMarketNote"></span></div>
+          <div class="tile"><span class="tile-label">Drawdown from peak</span><span class="tile-value" id="pDrawdown">—</span>
+            <div class="meter" id="pMeter" role="meter" aria-valuemin="0" aria-valuemax="10" aria-label="Drawdown against the 10% limit"><span></span></div>
+            <span class="tile-note" id="pDrawdownNote">Limit 10% of peak equity</span></div>
+        </section>
+
+        <section class="grid wide-narrow">
+          <article class="card">
+            <div class="card-head"><div><h2>Latest plan</h2><p class="sub" id="planSub"></p></div><span id="planBadge"></span></div>
+            <div id="planBody"></div>
+          </article>
+          <article class="card">
+            <div class="card-head"><div><h2>Reconciliation</h2><p class="sub">Alpaca is the source of truth</p></div><span id="reconBadge"></span></div>
+            <dl class="kv" id="reconList"></dl>
+            <ul class="problems" id="reconProblems"></ul>
+            <p class="card-foot">Any mismatch engages the kill switch before the next plan or submit.</p>
+          </article>
+        </section>
+
+        <article class="card">
+          <div class="card-head"><div><h2>Recent orders</h2><p class="sub">From the local ledger, refreshed from Alpaca by client order ID</p></div></div>
+          <div class="table-wrap" id="orderTable"></div>
+        </article>
+
+        <article class="card">
+          <div class="card-head"><div><h2>Daily routine</h2><p class="sub">Run in a terminal after Tiingo publishes the close</p></div></div>
+          <ol class="steps">
+            <li>Import the latest close, with today's date as the end
+              <div class="command"><code>python -m tradenow tiingo-import --start 2004-11-18 --end YYYY-MM-DD</code></div></li>
+            <li>Plan the next session (reconciles and cross-checks data; sends nothing)
+              <div class="command"><code>python -m tradenow paper-plan</code></div></li>
+            <li>If the plan has an order, approve it before 9:30 ET using the command in <b>Latest plan</b>.</li>
+            <li>In an emergency, cancel everything and optionally sell GLD
+              <div class="command"><code>python -m tradenow paper-halt --reason "..." --flatten</code></div></li>
+          </ol>
+        </article>
+        <p class="note">Alpaca paper fills are simulated and can differ from live execution. Live trading is not supported.</p>
+      </div>
+    </section>
   </main>
+
   <script>
+    'use strict';
     const $ = id => document.getElementById(id);
-    const ns = 'http://www.w3.org/2000/svg';
-    const money = value => new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:2}).format(Number(value));
-    function cell(row, value, className='') { const td=document.createElement('td'); td.textContent=value; if(className) td.className=className; row.appendChild(td); }
-    function clear(id) { $(id).replaceChildren(); }
-    function chart(id, points, key, color, datesId, fills=[]) {
-      const svg=$(id); svg.replaceChildren(); svg.setAttribute('viewBox','0 0 900 240');
-      if(!points.length) return;
-      const vals=points.map(p=>Number(p[key])); const lo=Math.min(...vals), hi=Math.max(...vals), span=Math.max(hi-lo,1);
-      const x=i=>46+i*820/Math.max(points.length-1,1), y=v=>205-(v-lo+span*.08)/(span*1.16)*175;
-      for(let n=0;n<5;n++){ const gy=27+n*44; const line=document.createElementNS(ns,'line'); line.setAttribute('x1','46');line.setAttribute('x2','866');line.setAttribute('y1',gy);line.setAttribute('y2',gy);line.setAttribute('stroke','#2c3952');line.setAttribute('stroke-dasharray','3 7');svg.appendChild(line); }
-      let start=0;for(let end=1;end<=points.length;end++){if(end<points.length&&points[end].contract===points[start].contract)continue;const poly=document.createElementNS(ns,'polyline');poly.setAttribute('points',points.slice(start,end).map((p,i)=>`${x(start+i)},${y(Number(p[key]))}`).join(' '));poly.setAttribute('fill','none');poly.setAttribute('stroke',color);poly.setAttribute('stroke-width','3');poly.setAttribute('stroke-linecap','round');poly.setAttribute('stroke-linejoin','round');svg.appendChild(poly);start=end;}
-      for(const fill of fills){ const i=points.findIndex(p=>p.date===fill.date);if(i<0)continue;const dot=document.createElementNS(ns,'circle');dot.setAttribute('cx',x(i));dot.setAttribute('cy',y(Number(fill.price)));dot.setAttribute('r','5');dot.setAttribute('fill',fill.side==='BUY'?'#55d6af':'#ffc46b');dot.setAttribute('stroke','#0b1426');dot.setAttribute('stroke-width','2');const title=document.createElementNS(ns,'title');title.textContent=`${fill.side} ${fill.date} @ ${fill.price}`;dot.appendChild(title);svg.appendChild(dot);}
-      $(datesId).replaceChildren(); const first=document.createElement('span'),last=document.createElement('span'); first.textContent=points[0].date;last.textContent=points.at(-1).date;$(datesId).append(first,last);
+    const SVG = 'http://www.w3.org/2000/svg';
+
+    /* ---------------- formatting ---------------- */
+    const usd = new Intl.NumberFormat('en-US', {style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2});
+    const money = value => usd.format(Number(value));
+    const signedMoney = value => { const n = Number(value); return (n > 0 ? '+' : n < 0 ? '−' : '') + usd.format(Math.abs(n)); };
+    const signedPct = value => { const n = Number(value); return (n > 0 ? '+' : n < 0 ? '−' : '') + Math.abs(n).toFixed(2) + '%'; };
+    const pct = value => Number(value).toFixed(2) + '%';
+    const count = value => new Intl.NumberFormat('en-US').format(Number(value));
+    const toDate = iso => { const [y, m, d] = iso.slice(0, 10).split('-').map(Number); return new Date(Date.UTC(y, m - 1, d)); };
+    const dayFmt = new Intl.DateTimeFormat('en-US', {month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC'});
+    const shortDay = new Intl.DateTimeFormat('en-US', {month: 'short', day: 'numeric', timeZone: 'UTC'});
+    const monthYear = new Intl.DateTimeFormat('en-US', {month: 'short', year: 'numeric', timeZone: 'UTC'});
+    const fmtDay = iso => dayFmt.format(toDate(iso));
+    const fmtStamp = iso => new Date(iso).toLocaleString('en-US', {timeZone: 'America/New_York', weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'}) + ' ET';
+    const humanize = code => String(code).replaceAll('_', ' ').toLowerCase().replace(/^./, c => c.toUpperCase());
+    const signClass = value => Number(value) > 0 ? 'up' : Number(value) < 0 ? 'down' : '';
+
+    /* ---------------- tiny DOM helpers ---------------- */
+    function h(tag, props = {}, ...children) {
+      const node = document.createElement(tag);
+      for (const [key, value] of Object.entries(props)) {
+        if (value === undefined || value === null || value === false) continue;
+        if (key === 'class') node.className = value; else if (key === 'text') node.textContent = value; else node.setAttribute(key, value);
+      }
+      node.append(...children.filter(child => child !== null && child !== undefined));
+      return node;
     }
-    function setMetric(id, value, signed=false){ const el=$(id);el.textContent=value;el.classList.remove('positive','negative');if(signed)el.classList.add(Number(value.replace(/[^0-9.-]/g,''))>=0?'positive':'negative'); }
-    function render(run){
-      const s=run.holdout_summary;
-      const d=run.data;
-      $('stressPanel').hidden=true;$('guidePanel').hidden=false;$('evaluationPanel').hidden=true;
-      if(run.mode==='offline_gld_simulation'){renderGld(run);return;}
-      $('drawdownStatus').hidden=true;
-      $('instrumentEyebrow').textContent='Micro Gold · Offline Research';
-      $('instrumentIntro').textContent='Replay synthetic or locally supplied MGC bars, compare hypotheses, and inspect the holdout portfolio. This dashboard never contacts a brokerage or market-data provider.';
-      $('priceTitle').textContent='MGC price';$('priceChart').setAttribute('aria-label','MGC price chart');
-      $('fillSubtitle').textContent='Next open or scheduled roll close';
-      $('fillInstrumentHeading').textContent='Contract';$('fillPointHeading').textContent='Point';$('fillGapHeading').textContent='Open gap';$('unfilledInstrumentHeading').textContent='Contract';
-      $('guideText').textContent='Three fixed moving-average hypotheses are measured on development and validation segments. Only validation chooses the holdout strategy. If every score is nonpositive, the system holds cash. Each period starts flat, and the order manager enforces risk approval and deduplicates simulated order IDs.';
-      $('sourceInfo').textContent=`${d.source==='local_csv'?'Local '+d.source_name:'Synthetic seed '+d.seed} · ${d.contracts.join(' → ')} · SHA-256 ${d.sha256.slice(0,16)}…`;
-      const c=run.config;$('modelInfo').textContent=`Illustrative margin ${Number(c.initial_margin_fraction)*100}% initial / ${Number(c.maintenance_margin_fraction)*100}% maintenance · notional cap ${Number(c.max_notional_fraction)*100}% of equity`;
-      $('contractTag').textContent=d.contracts.at(-1);
-      $('positionContractLabel').textContent=(run.open_contract||d.contracts.at(-1))+' contracts';
-      $('warningText').textContent=d.source==='local_csv'?`LOCAL DATA SIMULATION ONLY · Source accuracy and licensing are not verified. Margin is illustrative; ${d.open_times_provided?'session timestamps are checked against regular hours':'session hours cannot be verified without open_time_ct'}. Exchange holidays, delivery, market impact, and brokerage fills are not modeled. No Databento credits or real money are used.`:'SIMULATION ONLY · Prices are fictional. Margin is illustrative; missing timestamps cannot verify session hours. Exchange holidays, market impact, and brokerage fills are not modeled. No Databento credits or real money are used.';
-      setMetric('metricPnl',money(s.total_pnl),true);setMetric('metricStrategy',run.selected_hypothesis||'NO TRADE');setMetric('metricDrawdown',s.max_drawdown_pct+'%');setMetric('metricFills',String(s.fills));setMetric('metricPosition',String(s.open_contracts));
-      $('runId').textContent='RUN '+run.run_id.slice(0,8).toUpperCase();
-      chart('priceChart',run.prices,'close','#82a9ff','priceDates',run.fills);
-      chart('equityChart',run.equity_curve,'equity','#55d6af','equityDates');
-      clear('candidateRows');for(const c of run.candidates){const row=document.createElement('tr');cell(row,c.name,c.name===run.selected_hypothesis?'selected':'');cell(row,money(c.development_pnl),'right');cell(row,money(c.validation_pnl),'right');cell(row,c.validation_score,'right');$('candidateRows').appendChild(row);}
-      clear('fillRows');for(const f of run.fills){const row=document.createElement('tr');cell(row,f.date);cell(row,f.contract);cell(row,f.side,f.side==='BUY'?'positive':'');cell(row,f.execution_point);cell(row,money(f.price),'right');cell(row,f.opening_gap_pct===null||f.opening_gap_pct===undefined?'—':f.opening_gap_pct+'%','right');$('fillRows').appendChild(row);}$('emptyFills').hidden=run.fills.length>0;$('emptyFills').textContent=s.warmup_bars===run.prices.length?'No fills: every holdout bar was in strategy warmup.':'No fills. The selection gate or signal chose no trade.';
-      clear('riskRows');for(const r of run.risk_decisions){const row=document.createElement('tr');cell(row,r.date);cell(row,r.action);cell(row,r.approved?'APPROVED':'BLOCKED',r.approved?'positive':'negative');cell(row,r.reason);$('riskRows').appendChild(row);}$('emptyRisk').hidden=run.risk_decisions.length>0;
-      clear('unfilledRows');for(const u of run.unfilled_orders){const row=document.createElement('tr');cell(row,u.date);cell(row,u.contract);cell(row,u.side);cell(row,u.reason);$('unfilledRows').appendChild(row);}$('emptyUnfilled').hidden=run.unfilled_orders.length>0;$('rollSummary').textContent=`${run.rolls.length} contract transitions · ${run.unfilled_orders.length} unfilled orders`;
-      const p=run.periods;$('periodLabel').textContent=`Development ${p.development.first_date} → ${p.development.last_date} · Validation ${p.validation.first_date} → ${p.validation.last_date} · Holdout ${p.holdout.first_date} → ${p.holdout.last_date}`;
+    function s(tag, attrs, parent) {
+      const node = document.createElementNS(SVG, tag);
+      for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
+      if (parent) parent.appendChild(node);
+      return node;
     }
-    function renderGld(run){
-      const s=run.holdout_summary,d=run.data,c=run.config;
-      const halt=s.drawdown_halt;
-      $('drawdownStatus').hidden=false;
-      $('drawdownStatus').textContent=halt
-        ? `Closing-equity halt: ${halt.trigger_date} at ${halt.trigger_drawdown_pct}% drawdown (${halt.shares_at_trigger} shares). ${halt.exit_date?`Exit filled ${halt.exit_date} at ${money(halt.exit_price)}.`:halt.exit_pending?'Exit still pending at the end of the data.':'Flat when triggered.'} Threshold ${halt.threshold_pct}% does not cap losses.`
-        : `No drawdown halt triggered. The ${Number(c.max_drawdown_fraction)*100}% threshold uses closing equity and requests an exit at the next tradable open; it does not cap losses.`;
-      const evaluation=run.evaluation,comparison=evaluation.holdout,rolling=evaluation.rolling_pre_holdout;
-      $('evaluationPanel').hidden=false;
-      clear('benchmarkRows');for(const [label,key] of [['Strategy','strategy'],['Buy and hold 50%','buy_hold_50pct'],['Buy and hold 100%','buy_hold_100pct'],['Cash','cash']]){const item=comparison[key],row=document.createElement('tr');cell(row,label);cell(row,item.total_return_pct+'%','right');cell(row,item.annualized_return_pct+'%','right');cell(row,item.max_drawdown_pct+'%','right');$('benchmarkRows').appendChild(row);}
-      $('turnoverSummary').textContent=`Strategy gross traded notional: ${comparison.strategy.gross_traded_notional_pct_of_starting_cash}% of starting cash`;
-      clear('slippageRows');for(const item of evaluation.slippage_sensitivity){const row=document.createElement('tr');cell(row,money(item.slippage_per_share));cell(row,item.total_return_pct+'%','right');cell(row,String(item.fills),'right');$('slippageRows').appendChild(row);}
-      const rs=rolling.summary;$('rollingSummary').textContent=`${rs.windows} non-overlapping test windows · ${rs.positive_windows} positive · ${rs.beat_buy_hold_50pct_windows} beat 50% buy and hold · ${rs.selected_windows} selected a strategy`;
-      clear('rollingRows');for(const item of rolling.windows){const row=document.createElement('tr');cell(row,`${item.test_start} → ${item.test_end}`);cell(row,item.selected_hypothesis||'NO TRADE');cell(row,item.test_return_pct+'%','right');cell(row,item.buy_hold_50pct_return_pct+'%','right');$('rollingRows').appendChild(row);}
-      $('instrumentEyebrow').textContent='GLD · Historical Gold ETF Research';
-      $('instrumentIntro').textContent='Replay locally saved GLD daily bars and inspect share-based portfolio results. This dashboard makes no market-data or brokerage calls.';
-      $('sourceInfo').textContent=`${d.source==='tiingo_eod_import'?'Tiingo EOD import':'Local GLD CSV'} · ${d.bars} bars · SHA-256 ${d.sha256.slice(0,16)}…`;
-      $('modelInfo').textContent=`Cash-funded whole shares · position cap ${Number(c.max_position_fraction)*100}% of cash · illustrative slippage ${money(c.slippage_per_share)} per share`;
-      $('priceTitle').textContent='GLD price';$('priceChart').setAttribute('aria-label','GLD price chart');
-      $('contractTag').textContent='GLD';$('positionContractLabel').textContent='GLD shares';
-      $('fillSubtitle').textContent='Next-open share orders';
-      $('fillInstrumentHeading').textContent='Symbol';$('fillPointHeading').textContent='Shares';$('fillGapHeading').textContent='Slip/share';$('unfilledInstrumentHeading').textContent='Symbol';
-      $('warningText').textContent='HISTORICAL GLD SIMULATION ONLY · The drawdown threshold is a closing-equity halt with a next-tradable-open exit request, not a guaranteed stop. Fills and slippage are simulated; daily bars cannot show actual order execution. No brokerage, Databento, or Tiingo API call occurs during this replay.';
-      $('guideText').textContent='Three fixed moving-average hypotheses are measured on development and validation segments. Only validation chooses the holdout strategy. If every score is nonpositive, the system holds cash. Each period starts flat; buys spend cash on whole GLD shares.';
-      setMetric('metricPnl',money(s.total_pnl),true);setMetric('metricStrategy',run.selected_hypothesis||'NO TRADE');setMetric('metricDrawdown',s.max_drawdown_pct+'%');setMetric('metricFills',String(s.fills));setMetric('metricPosition',String(s.open_shares));
-      $('runId').textContent='RUN '+run.run_id.slice(0,8).toUpperCase();
-      chart('priceChart',run.prices,'close','#82a9ff','priceDates',run.fills);
-      chart('equityChart',run.equity_curve,'equity','#55d6af','equityDates');
-      clear('candidateRows');for(const item of run.candidates){const row=document.createElement('tr');cell(row,item.name,item.name===run.selected_hypothesis?'selected':'');cell(row,money(item.development_pnl),'right');cell(row,money(item.validation_pnl),'right');cell(row,item.validation_score,'right');$('candidateRows').appendChild(row);}
-      clear('fillRows');for(const f of run.fills){const row=document.createElement('tr');cell(row,f.date);cell(row,f.symbol);cell(row,f.side,f.side==='BUY'?'positive':'');cell(row,String(f.shares),'right');cell(row,money(f.price),'right');cell(row,money(c.slippage_per_share),'right');$('fillRows').appendChild(row);}$('emptyFills').hidden=run.fills.length>0;
-      clear('riskRows');for(const r of run.risk_decisions){const row=document.createElement('tr');cell(row,r.date);cell(row,r.action);cell(row,r.approved?'APPROVED':'BLOCKED',r.approved?'positive':'negative');cell(row,r.reason);$('riskRows').appendChild(row);}$('emptyRisk').hidden=run.risk_decisions.length>0;
-      clear('unfilledRows');for(const u of run.unfilled_orders){const row=document.createElement('tr');cell(row,u.date);cell(row,u.symbol);cell(row,u.side);cell(row,u.reason);$('unfilledRows').appendChild(row);}$('emptyUnfilled').hidden=run.unfilled_orders.length>0;$('rollSummary').textContent=`${run.unfilled_orders.length} unfilled orders · GLD has no contract rolls`;
-      const p=run.periods;$('periodLabel').textContent=`Development ${p.development.first_date} → ${p.development.last_date} · Validation ${p.validation.first_date} → ${p.validation.last_date} · Holdout ${p.holdout.first_date} → ${p.holdout.last_date}`;
+    function badge(text, tone = '') { return h('span', {class: 'badge ' + tone, text}); }
+    function setText(id, text, cls) { const node = $(id); node.textContent = text; node.classList.remove('up', 'down'); if (cls) node.classList.add(cls); }
+
+    /* Render a table: columns are {label, value(row) -> string|Node, num?, cls?(row)} */
+    function table(hostId, columns, rows, emptyText) {
+      const host = $(hostId);
+      const head = h('tr', {}, ...columns.map(col => h('th', {class: col.num ? 'num' : '', scope: 'col', text: col.label})));
+      const body = h('tbody');
+      for (const row of rows) {
+        body.appendChild(h('tr', {}, ...columns.map(col => {
+          const value = col.value(row);
+          const td = h('td', {class: [col.num ? 'num' : '', col.cls ? col.cls(row) : ''].join(' ').trim() || null});
+          td.append(value instanceof Node ? value : String(value));
+          return td;
+        })));
+      }
+      host.replaceChildren(h('table', {}, h('thead', {}, head), body));
+      if (!rows.length) host.appendChild(h('p', {class: 'empty', text: emptyText}));
     }
-    async function loadGld(){const button=$('gldButton');button.disabled=true;$('message').textContent='Replaying private GLD bars…';try{const response=await fetch('/api/simulation/gld');const data=await response.json();if(!response.ok)throw Error(data.error||'GLD replay failed');render(data);$('message').textContent=`Run ${data.run_id.slice(0,8)} complete · ${data.days} GLD bars · no external calls`;}catch(error){$('message').textContent=error.message;}finally{button.disabled=false;}}
-    async function loadRun(event){if(event)event.preventDefault();const button=$('runButton');button.disabled=true;$('message').textContent='Replaying synthetic bars…';try{const seed=Number($('seed').value),days=Number($('days').value);const response=await fetch(`/api/simulation?seed=${seed}&days=${days}`);const data=await response.json();if(!response.ok)throw Error(data.error||'Simulation failed');render(data);$('message').textContent=`Run ${data.run_id.slice(0,8)} complete · ${data.days} bars · no external calls`; }catch(error){$('message').textContent=error.message;}finally{button.disabled=false;}}
-    async function loadLocal(){const file=$('localFile').files[0];if(!file){$('message').textContent='Choose a local CSV first.';return;}if(file.size>2000000){$('message').textContent='Local CSV exceeds 2 MB.';return;}const button=$('localButton');button.disabled=true;$('message').textContent='Analyzing local CSV in memory…';try{const response=await fetch(`/api/simulation/local?filename=${encodeURIComponent(file.name)}`,{method:'POST',headers:{'Content-Type':'text/csv'},body:file});const data=await response.json();if(!response.ok)throw Error(data.error||'Local analysis failed');render(data);$('message').textContent=`Run ${data.run_id.slice(0,8)} complete · ${data.days} local bars · no external calls`;}catch(error){$('message').textContent=error.message;}finally{button.disabled=false;}}
-    async function loadStress(){const button=$('stressButton');button.disabled=true;$('message').textContent='Running 12 synthetic seeds and fault checks…';try{const response=await fetch('/api/stress?seeds=12&days=360');const data=await response.json();if(!response.ok)throw Error(data.error||'Stress suite failed');$('stressPanel').hidden=false;$('guidePanel').hidden=true;$('stressStatus').textContent=data.passed?'PASS':'FAIL';$('stressStatus').className='tag '+(data.passed?'pass':'fail');$('stressSummary').textContent=`${data.seeds} seeds · ${data.coverage.no_trade_selections} no-trade selections`;$('faultSummary').textContent=`${data.fault_cases.filter(c=>c.passed).length}/${data.fault_cases.length} injected faults caught`;clear('stressRows');for(const s of data.seed_runs){const row=document.createElement('tr');cell(row,String(s.seed));cell(row,s.selected_hypothesis||'NO TRADE');cell(row,s.holdout_pnl===undefined?'—':money(s.holdout_pnl),'right');cell(row,s.passed?'PASS':'FAIL',s.passed?'pass':'fail');$('stressRows').appendChild(row);}$('message').textContent=data.passed?'Stress suite passed · synthetic checks only':'Stress suite failed · inspect results';}catch(error){$('message').textContent=error.message;}finally{button.disabled=false;}}
-    $('runForm').addEventListener('submit',loadRun);$('stressButton').addEventListener('click',loadStress);$('localButton').addEventListener('click',loadLocal);$('gldButton').addEventListener('click',loadGld);loadRun();
+
+    /* ---------------- charts ---------------- */
+    function niceScale(lo, hi, target) {
+      if (lo === hi) { lo -= Math.abs(lo) * 0.01 || 1; hi += Math.abs(hi) * 0.01 || 1; }
+      const raw = (hi - lo) / target, mag = 10 ** Math.floor(Math.log10(raw)), err = raw / mag;
+      const step = (err >= 7.5 ? 10 : err >= 3.5 ? 5 : err >= 1.5 ? 2 : 1) * mag;
+      const start = Math.floor(lo / step) * step, end = Math.ceil(hi / step) * step, ticks = [];
+      for (let v = start; v <= end + step / 2; v += step) ticks.push(Number(v.toPrecision(12)));
+      return {lo: start, hi: end, ticks, step};
+    }
+    function tickFormatter(step, prefix = '', suffix = '') {
+      const decimals = Math.max(0, -Math.floor(Math.log10(step)));
+      const f = new Intl.NumberFormat('en-US', {minimumFractionDigits: decimals, maximumFractionDigits: decimals});
+      return v => (v < 0 ? '−' : '') + prefix + f.format(Math.abs(v)) + suffix;
+    }
+    function measureText(text) { return text.length * 6.6 + 4; }
+
+    const charts = new Map();
+    const observer = new ResizeObserver(entries => { for (const entry of entries) { const draw = charts.get(entry.target); if (draw) draw(); } });
+    function mountChart(host, draw, watch = host) { charts.set(watch, draw); observer.observe(watch); draw(); }
+
+    function tooltip(host) {
+      let tip = host.querySelector('.tooltip');
+      if (!tip) { tip = h('div', {class: 'tooltip', role: 'presentation'}); tip.hidden = true; host.appendChild(tip); }
+      return tip;
+    }
+    function placeTip(host, tip, x, y) {
+      tip.hidden = false;
+      const width = tip.offsetWidth, room = host.clientWidth;
+      tip.style.left = Math.max(0, x + 14 + width > room ? x - width - 14 : x + 14) + 'px';
+      tip.style.top = Math.max(0, y - tip.offsetHeight / 2) + 'px';
+    }
+
+    /* Line chart over trading days; segments break where `segment` changes (futures rolls). */
+    function lineChart(host, {points, value, prefix = '', label, markers = [], valueLabel}) {
+      mountChart(host, () => {
+        const width = Math.max(host.clientWidth, 280), height = 260;
+        const values = points.map(value).concat(markers.map(m => m.price));
+        const lo = Math.min(...values), hi = Math.max(...values);
+        const scale = niceScale(lo - (hi - lo) * 0.04, hi + (hi - lo) * 0.04, 5);
+        const fmt = tickFormatter(scale.step, prefix);
+        const left = Math.max(...scale.ticks.map(t => measureText(fmt(t)))) + 8, right = 12, top = 10, bottom = 26;
+        const plotW = width - left - right, plotH = height - top - bottom;
+        const x = i => left + (points.length > 1 ? i * plotW / (points.length - 1) : plotW / 2);
+        const y = v => top + (scale.hi - v) / (scale.hi - scale.lo) * plotH;
+
+        const svg = s('svg', {width, height, viewBox: `0 0 ${width} ${height}`, role: 'img', tabindex: '0',
+                              'aria-label': `${label}: ${points.length} trading days from ${fmtDay(points[0].date)} to ${fmtDay(points.at(-1).date)}; last ${valueLabel(value(points.at(-1)))}. Use arrow keys to read values.`});
+        for (const t of scale.ticks) {
+          s('line', {x1: left, x2: width - right, y1: y(t), y2: y(t), stroke: 'var(--grid)', 'stroke-width': 1, 'shape-rendering': 'crispEdges'}, svg);
+          s('text', {x: left - 8, y: y(t) + 4, 'text-anchor': 'end', class: 'axis-text'}, svg).textContent = fmt(t);
+        }
+        s('line', {x1: left, x2: width - right, y1: top + plotH, y2: top + plotH, stroke: 'var(--axis)', 'stroke-width': 1, 'shape-rendering': 'crispEdges'}, svg);
+        const spanDays = (toDate(points.at(-1).date) - toDate(points[0].date)) / 864e5;
+        const dateFmt = spanDays > 300 ? monthYear : shortDay;
+        const tickCount = Math.max(2, Math.min(6, Math.floor(plotW / 110)));
+        for (let k = 0; k < tickCount; k++) {
+          const i = Math.round(k * (points.length - 1) / (tickCount - 1));
+          const anchor = k === 0 ? 'start' : k === tickCount - 1 ? 'end' : 'middle';
+          s('text', {x: x(i), y: height - 6, 'text-anchor': anchor, class: 'axis-text'}, svg).textContent = dateFmt.format(toDate(points[i].date));
+        }
+        let start = 0;
+        for (let end = 1; end <= points.length; end++) {
+          if (end < points.length && points[end].contract === points[start].contract) continue;
+          const d = points.slice(start, end).map((p, j) => `${j ? 'L' : 'M'}${x(start + j).toFixed(1)},${y(value(p)).toFixed(1)}`).join('');
+          s('path', {d, fill: 'none', stroke: 'var(--series-1)', 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round'}, svg);
+          start = end;
+        }
+        const byDate = new Map(points.map((p, i) => [p.date, i]));
+        for (const m of markers) {
+          const i = byDate.get(m.date); if (i === undefined) continue;
+          const cx = x(i), cy = y(m.price), r = 6;
+          const d = m.side === 'BUY' ? `M${cx},${cy - r}L${cx + r},${cy + r * .75}L${cx - r},${cy + r * .75}Z` : `M${cx},${cy + r}L${cx + r},${cy - r * .75}L${cx - r},${cy - r * .75}Z`;
+          s('path', {d, fill: m.side === 'BUY' ? 'var(--series-3)' : 'var(--series-2)', stroke: 'var(--surface)', 'stroke-width': 2, 'stroke-linejoin': 'round'}, svg);
+        }
+        const cross = s('line', {y1: top, y2: top + plotH, stroke: 'var(--axis-ink)', 'stroke-width': 1, visibility: 'hidden'}, svg);
+        const focus = s('circle', {r: 4.5, fill: 'var(--series-1)', stroke: 'var(--surface)', 'stroke-width': 2, visibility: 'hidden'}, svg);
+        const hit = s('rect', {x: left, y: top, width: plotW, height: plotH, fill: 'transparent'}, svg);
+        host.replaceChildren(svg);
+        const tip = tooltip(host);
+        const markersOn = new Map(); for (const m of markers) { if (!markersOn.has(m.date)) markersOn.set(m.date, []); markersOn.get(m.date).push(m); }
+        let current = -1;
+        function show(i) {
+          current = Math.max(0, Math.min(points.length - 1, i));
+          const p = points[current], px = x(current), py = y(value(p));
+          cross.setAttribute('x1', px); cross.setAttribute('x2', px); cross.setAttribute('visibility', 'visible');
+          focus.setAttribute('cx', px); focus.setAttribute('cy', py); focus.setAttribute('visibility', 'visible');
+          tip.replaceChildren(h('div', {text: fmtDay(p.date)}), h('div', {class: 'tt-value', text: valueLabel(value(p))}));
+          for (const m of markersOn.get(p.date) || []) {
+            tip.appendChild(h('div', {class: 'tt-row'}, h('span', {class: 'key-glyph', style: `color:var(${m.side === 'BUY' ? '--series-3' : '--series-2'})`, text: m.side === 'BUY' ? '▲' : '▼'}),
+              h('span', {text: `${m.side === 'BUY' ? 'Buy' : 'Sell'} ${m.detail} at `}), h('b', {text: money(m.price)})));
+          }
+          placeTip(host, tip, px, py);
+        }
+        function hide() { cross.setAttribute('visibility', 'hidden'); focus.setAttribute('visibility', 'hidden'); tip.hidden = true; }
+        hit.addEventListener('pointermove', event => {
+          const box = svg.getBoundingClientRect();
+          show(Math.round((event.clientX - box.left - left) / plotW * (points.length - 1)));
+        });
+        hit.addEventListener('pointerleave', hide);
+        svg.addEventListener('blur', hide);
+        svg.addEventListener('keydown', event => {
+          const step = event.shiftKey ? 10 : 1;
+          if (event.key === 'ArrowRight') show(current < 0 ? 0 : current + step);
+          else if (event.key === 'ArrowLeft') show(current < 0 ? points.length - 1 : current - step);
+          else if (event.key === 'Home') show(0); else if (event.key === 'End') show(points.length - 1);
+          else if (event.key === 'Escape') hide(); else return;
+          event.preventDefault();
+        });
+      });
+    }
+
+    /* Grouped columns from a zero baseline: strategy vs buy-and-hold per rolling window. */
+    function rollingChart(host, windows) {
+      mountChart(host, () => {
+        const minWidth = windows.length * 20 + 60;
+        const width = Math.max(host.parentElement.clientWidth, minWidth), height = 240;
+        host.style.width = width + 'px';
+        const values = windows.flatMap(w => [Number(w.test_return_pct), Number(w.buy_hold_50pct_return_pct)]).concat(0);
+        const scale = niceScale(Math.min(...values), Math.max(...values), 5);
+        const fmt = tickFormatter(scale.step, '', '%');
+        const left = Math.max(...scale.ticks.map(t => measureText(fmt(t)))) + 8, right = 8, top = 10, bottom = 26;
+        const plotW = width - left - right, plotH = height - top - bottom, band = plotW / windows.length;
+        const y = v => top + (scale.hi - v) / (scale.hi - scale.lo) * plotH;
+        const barW = Math.max(3, Math.min(24, (band - 6) / 2 - 1));
+        const svg = s('svg', {width, height, viewBox: `0 0 ${width} ${height}`, role: 'img',
+                              'aria-label': `Rolling test returns for ${windows.length} windows; see the table for values.`});
+        for (const t of scale.ticks) {
+          s('line', {x1: left, x2: width - right, y1: y(t), y2: y(t), stroke: t === 0 ? 'var(--axis)' : 'var(--grid)', 'stroke-width': 1, 'shape-rendering': 'crispEdges'}, svg);
+          s('text', {x: left - 8, y: y(t) + 4, 'text-anchor': 'end', class: 'axis-text'}, svg).textContent = fmt(t);
+        }
+        const bar = (x0, v, color) => {
+          const y0 = y(0), y1 = y(v), up = v >= 0, hgt = Math.abs(y1 - y0), r = Math.min(4, hgt, barW / 2);
+          const edge = up ? y1 : y1, base = y0;
+          const d = up
+            ? `M${x0},${base}V${edge + r}Q${x0},${edge} ${x0 + r},${edge}H${x0 + barW - r}Q${x0 + barW},${edge} ${x0 + barW},${edge + r}V${base}Z`
+            : `M${x0},${base}V${edge - r}Q${x0},${edge} ${x0 + r},${edge}H${x0 + barW - r}Q${x0 + barW},${edge} ${x0 + barW},${edge - r}V${base}Z`;
+          if (hgt >= 0.5) s('path', {d, fill: color}, svg);
+        };
+        const labelEvery = Math.ceil(windows.length / Math.max(2, Math.floor(plotW / 80)));
+        windows.forEach((w, i) => {
+          const cx = left + band * i + band / 2;
+          bar(cx - barW - 1, Number(w.test_return_pct), 'var(--series-1)');
+          bar(cx + 1, Number(w.buy_hold_50pct_return_pct), 'var(--series-2)');
+          if (i % labelEvery === 0) s('text', {x: cx, y: height - 6, 'text-anchor': 'middle', class: 'axis-text'}, svg).textContent = monthYear.format(toDate(w.test_start));
+        });
+        const highlight = s('rect', {y: top, height: plotH, width: band, fill: 'var(--ink)', opacity: 0.05, visibility: 'hidden'}, svg);
+        const hit = s('rect', {x: left, y: top, width: plotW, height: plotH, fill: 'transparent'}, svg);
+        host.replaceChildren(svg);
+        const tip = tooltip(host);
+        hit.addEventListener('pointermove', event => {
+          const box = svg.getBoundingClientRect(), i = Math.max(0, Math.min(windows.length - 1, Math.floor((event.clientX - box.left - left) / band)));
+          const w = windows[i];
+          highlight.setAttribute('x', left + band * i); highlight.setAttribute('visibility', 'visible');
+          tip.replaceChildren(h('div', {text: `${fmtDay(w.test_start)} – ${fmtDay(w.test_end)}`}),
+            h('div', {class: 'tt-row'}, h('span', {class: 'key-line', style: 'color:var(--series-1)'}), h('b', {text: signedPct(w.test_return_pct)}), h('span', {text: `strategy (${w.selected_hypothesis || 'no trade'})`})),
+            h('div', {class: 'tt-row'}, h('span', {class: 'key-line', style: 'color:var(--series-2)'}), h('b', {text: signedPct(w.buy_hold_50pct_return_pct)}), h('span', {text: 'buy and hold, 50%'})));
+          placeTip(host, tip, left + band * i + band / 2, event.clientY - box.top);
+        });
+        hit.addEventListener('pointerleave', () => { highlight.setAttribute('visibility', 'hidden'); tip.hidden = true; });
+      }, host.parentElement);
+    }
+
+    /* ---------------- research ---------------- */
+    const NOTES = {
+      synthetic: 'Simulation only. Prices are fictional, margin is illustrative, and session hours cannot be verified without timestamps. Exchange holidays, market impact, and brokerage fills are not modeled.',
+      local_csv: 'Local data simulation only. Source accuracy and licensing are not verified; margin is illustrative. Exchange holidays, delivery, market impact, and brokerage fills are not modeled.',
+      gld: 'Historical GLD simulation only. Fills and slippage are simulated; daily bars cannot show actual execution. No brokerage, Databento, or Tiingo call occurs during this replay. Historical results do not establish expected returns.',
+      stress: 'Synthetic checks only. Passing the stress suite shows the simulator catches injected faults; it says nothing about market performance.',
+    };
+
+    function selectedSource() { return document.querySelector('input[name="source"]:checked').value; }
+    function showSourceFields() {
+      const source = selectedSource();
+      for (const node of document.querySelectorAll('[data-source]')) node.hidden = node.dataset.source !== source;
+      $('runButton').textContent = source === 'stress' ? 'Run stress suite' : source === 'local' ? 'Analyse CSV' : 'Run replay';
+      try { localStorage.setItem('tradenow.source', source); } catch (error) { /* storage unavailable */ }
+    }
+
+    function setMessage(text, isError = false) { $('message').textContent = text; $('message').classList.toggle('error', isError); }
+
+    function renderPeriods(periods) {
+      const parts = [['Development', periods.development], ['Validation', periods.validation], ['Holdout', periods.holdout]];
+      [...$('timeline').children].forEach((span, i) => { span.style.flex = String(parts[i][1].bars); });
+      $('timelineLabels').replaceChildren(...parts.map(([name, part], i) => h('div', {},
+        h('b', {}, h('span', {class: 'key-box', style: `background:var(--period-${i + 1})`}), name),
+        h('span', {text: `${fmtDay(part.first_date)} – ${fmtDay(part.last_date)} · ${count(part.bars)} bars`}))));
+    }
+
+    function renderHalt(run) {
+      const callout = $('haltCallout'), halt = run.holdout_summary.drawdown_halt;
+      if (run.mode !== 'offline_gld_simulation') { callout.hidden = true; return; }
+      const threshold = Number(run.config.max_drawdown_fraction) * 100;
+      callout.hidden = false;
+      if (!halt) {
+        callout.className = 'callout info';
+        $('haltTitle').textContent = `Drawdown halt not triggered (${threshold}% threshold)`;
+        $('haltText').textContent = 'The threshold is checked on closing equity. A breach blocks new entries and sells at the next tradable open, so it is not a guaranteed stop: an overnight gap can push the loss past the threshold.';
+        return;
+      }
+      callout.className = 'callout warn';
+      $('haltTitle').textContent = `Drawdown halt triggered · max drawdown ${pct(run.holdout_summary.max_drawdown_pct)} vs ${threshold}% threshold`;
+      const exit = halt.exit_date ? `The ${count(halt.shares_at_trigger)} shares were sold at the next open on ${fmtDay(halt.exit_date)} at ${money(halt.exit_price)}.`
+        : halt.exit_pending ? 'The exit was still pending when the data ended.' : 'The portfolio was already flat.';
+      $('haltText').textContent = `Closing equity was ${pct(halt.trigger_drawdown_pct)} below its peak on ${fmtDay(halt.trigger_date)}. ${exit} New entries stay blocked. This is a closing-price check with a next-open exit, not a stop order, so losses can exceed ${threshold}%.`;
+    }
+
+    function renderEvaluation(run) {
+      const section = $('evaluation');
+      section.hidden = run.mode !== 'offline_gld_simulation';
+      if (section.hidden) return;
+      const evaluation = run.evaluation, holdout = evaluation.holdout;
+      const rows = [['Selected strategy', holdout.strategy, true], ['Buy and hold, 50%', holdout.buy_hold_50pct], ['Buy and hold, 100%', holdout.buy_hold_100pct], ['Cash, zero interest', holdout.cash]];
+      table('benchmarkTable', [
+        {label: 'Portfolio', value: r => r[0], cls: r => r[2] ? 'strong' : ''},
+        {label: 'Return', value: r => signedPct(r[1].total_return_pct), num: true, cls: r => signClass(r[1].total_return_pct)},
+        {label: 'Annualized', value: r => signedPct(r[1].annualized_return_pct), num: true},
+        {label: 'Max drawdown', value: r => pct(r[1].max_drawdown_pct), num: true},
+      ], rows, '');
+      $('turnover').textContent = `Strategy traded ${pct(holdout.strategy.gross_traded_notional_pct_of_starting_cash)} of starting cash (gross notional)`;
+      $('holdoutDays').textContent = `${count(holdout.calendar_days)} calendar days`;
+      table('slippageTable', [
+        {label: 'Slippage / share', value: r => money(r.slippage_per_share)},
+        {label: 'Holdout return', value: r => signedPct(r.total_return_pct), num: true, cls: r => signClass(r.total_return_pct)},
+        {label: 'Fills', value: r => count(r.fills), num: true},
+      ], evaluation.slippage_sensitivity, '');
+      const rolling = evaluation.rolling_pre_holdout, summary = rolling.summary;
+      $('rollingSummary').textContent = `${summary.windows} non-overlapping windows · ${summary.positive_windows} positive · ${summary.beat_buy_hold_50pct_windows} beat 50% buy and hold · ${summary.selected_windows} selected a strategy`;
+      if (rolling.windows.length) rollingChart($('rollingChart'), rolling.windows); else $('rollingChart').replaceChildren(h('p', {class: 'empty', text: 'Not enough history before the holdout for rolling tests.'}));
+      table('rollingTable', [
+        {label: 'Test window', value: w => `${fmtDay(w.test_start)} – ${fmtDay(w.test_end)}`},
+        {label: 'Selected', value: w => w.selected_hypothesis || 'No trade'},
+        {label: 'Strategy', value: w => signedPct(w.test_return_pct), num: true, cls: w => signClass(w.test_return_pct)},
+        {label: 'Buy and hold 50%', value: w => signedPct(w.buy_hold_50pct_return_pct), num: true},
+        {label: 'Beat benchmark', value: w => w.beat_benchmark ? 'Yes' : 'No'},
+      ], rolling.windows, 'No rolling windows.');
+    }
+
+    function renderRun(run) {
+      const gld = run.mode === 'offline_gld_simulation', summary = run.holdout_summary, data = run.data, config = run.config;
+      $('runContent').hidden = false; $('stressContent').hidden = true;
+      $('researchTitle').textContent = gld ? 'GLD research' : 'Micro Gold research';
+      $('researchLede').textContent = gld
+        ? 'Replay saved GLD daily bars with cash-funded whole shares, compare fixed hypotheses, and test the result against simple benchmarks and higher costs.'
+        : 'Replay synthetic or local MGC futures bars, compare fixed hypotheses, and inspect every holdout decision, roll, and unfilled order.';
+      const source = gld ? (data.source === 'tiingo_eod_import' ? 'Tiingo EOD import' : 'Local GLD CSV')
+                         : (data.source === 'local_csv' ? `Local ${data.source_name}` : `Synthetic seed ${data.seed}`);
+      $('provenance').replaceChildren(...[
+        h('span', {class: 'chip', text: source}),
+        h('span', {class: 'chip', text: `${count(data.bars)} bars`}),
+        gld ? null : h('span', {class: 'chip', text: data.contracts.join(' → ')}),
+        h('span', {class: 'chip', text: `SHA-256 ${data.sha256.slice(0, 12)}…`, title: data.sha256}),
+        h('span', {class: 'chip', text: gld ? `Position cap ${Number(config.max_position_fraction) * 100}% of cash`
+          : `Margin ${Number(config.initial_margin_fraction) * 100}% / ${Number(config.maintenance_margin_fraction) * 100}% (illustrative)`}),
+        h('span', {class: 'chip', text: gld ? `Slippage ${money(config.slippage_per_share)}/share` : `Notional cap ${Number(config.max_notional_fraction) * 100}%`}),
+      ].filter(Boolean));
+
+      setText('tPnl', signedMoney(summary.total_pnl), signClass(summary.total_pnl));
+      setText('tReturn', signedPct(summary.total_return_pct), signClass(summary.total_return_pct));
+      setText('tStrategy', run.selected_hypothesis || 'No trade');
+      setText('tDrawdown', pct(summary.max_drawdown_pct));
+      setText('tFills', count(summary.fills));
+      $('tFillsNote').textContent = `${summary.closed_trades} closed trades · ${summary.unfilled_orders} unfilled`;
+      setText('tPosition', count(gld ? summary.open_shares : summary.open_contracts));
+      $('tPositionNote').textContent = gld ? 'GLD shares' : `${run.open_contract || data.contracts.at(-1)} contracts`;
+      $('runChip').textContent = 'Run ' + run.run_id.slice(0, 8);
+      renderHalt(run);
+
+      $('priceTitle').textContent = gld ? 'GLD price' : 'MGC price';
+      const markers = run.fills.filter(f => f.side === 'BUY' || f.side === 'SELL').map(f => ({date: f.date, price: Number(f.price), side: f.side,
+        detail: gld ? `${count(f.shares)} shares` : `1 ${f.contract}`}));
+      lineChart($('priceChart'), {points: run.prices, value: p => Number(p.close), prefix: '$', label: `${gld ? 'GLD' : 'MGC'} holdout close`, markers, valueLabel: money});
+      lineChart($('equityChart'), {points: run.equity_curve, value: p => Number(p.equity), prefix: '$', label: 'Portfolio equity', valueLabel: money});
+
+      renderEvaluation(run);
+      table('candidateTable', [
+        {label: 'Candidate', value: c => c.name === run.selected_hypothesis ? h('span', {}, c.name + ' ', badge('Selected', 'good')) : c.name},
+        {label: 'Development P&L', value: c => signedMoney(c.development_pnl), num: true},
+        {label: 'Validation P&L', value: c => signedMoney(c.validation_pnl), num: true},
+        {label: 'Score', value: c => Number(c.validation_score).toFixed(3), num: true, cls: c => signClass(c.validation_score)},
+      ], run.candidates, '');
+      renderPeriods(run.periods);
+
+      $('fillSub').textContent = gld ? 'Whole-share orders at the next open' : 'Next open, or the scheduled roll close';
+      $('fillCount').textContent = `${run.fills.length} fills`;
+      const sideCell = f => badge(f.side === 'BUY' ? 'Buy' : 'Sell', f.side === 'BUY' ? 'accent' : '');
+      table('fillTable', gld ? [
+        {label: 'Date', value: f => fmtDay(f.date)}, {label: 'Side', value: sideCell},
+        {label: 'Shares', value: f => count(f.shares), num: true}, {label: 'Price', value: f => money(f.price), num: true},
+      ] : [
+        {label: 'Date', value: f => fmtDay(f.date)}, {label: 'Contract', value: f => f.contract}, {label: 'Side', value: sideCell},
+        {label: 'Point', value: f => humanize(f.execution_point)}, {label: 'Price', value: f => money(f.price), num: true},
+        {label: 'Open gap', value: f => f.opening_gap_pct == null ? '—' : signedPct(f.opening_gap_pct), num: true},
+      ], run.fills, summary.warmup_bars === run.prices.length ? 'No fills: every holdout bar was strategy warm-up.' : 'No fills: the selection gate or the signal chose no trade.');
+
+      table('riskTable', [
+        {label: 'Date', value: r => fmtDay(r.date)}, {label: 'Action', value: r => humanize(r.action)},
+        {label: 'Decision', value: r => r.approved ? badge('Approved', 'good') : badge(r.action === 'HALT_NEW_ENTRIES' ? 'Halt' : 'Blocked', r.action === 'HALT_NEW_ENTRIES' ? 'warn' : 'crit')},
+        {label: 'Reason', value: r => r.reason, cls: () => 'code'},
+      ], run.risk_decisions, 'No orders were proposed during the holdout.');
+      $('unfilledSub').textContent = gld ? 'Zero volume or stale bars block a fill' : `${run.rolls.length} contract transitions · zero volume, off-session, or stale bars block a fill`;
+      table('unfilledTable', [
+        {label: 'Date', value: u => fmtDay(u.date)}, {label: gld ? 'Symbol' : 'Contract', value: u => gld ? u.symbol : u.contract},
+        {label: 'Side', value: u => humanize(u.side)}, {label: 'Reason', value: u => u.reason, cls: () => 'code'},
+      ], run.unfilled_orders, 'No unfilled orders.');
+      $('researchNote').textContent = gld ? NOTES.gld : data.source === 'local_csv' ? NOTES.local_csv : NOTES.synthetic;
+    }
+
+    function renderStress(report) {
+      $('runContent').hidden = true; $('stressContent').hidden = false;
+      $('researchTitle').textContent = 'Stress suite';
+      $('researchLede').textContent = 'Deterministic replays and injected faults check that the simulator refuses bad data, duplicate orders, and broken ledgers.';
+      const caught = report.fault_cases.filter(c => c.passed).length;
+      setText('sResult', report.passed ? 'Pass' : 'Fail', report.passed ? 'up' : 'down');
+      setText('sSeeds', count(report.seeds)); $('sSeedsNote').textContent = `${report.days_per_seed} bars each`;
+      setText('sFaults', `${caught} / ${report.fault_cases.length}`);
+      setText('sNoTrade', count(report.coverage.no_trade_selections));
+      table('seedTable', [
+        {label: 'Seed', value: r => r.seed, num: true}, {label: 'Selection', value: r => r.selected_hypothesis || 'No trade'},
+        {label: 'Holdout P&L', value: r => r.holdout_pnl === undefined ? '—' : signedMoney(r.holdout_pnl), num: true},
+        {label: 'Check', value: r => badge(r.passed ? 'Pass' : 'Fail', r.passed ? 'good' : 'crit')},
+      ], report.seed_runs, 'No seeds were run.');
+      table('faultTable', [
+        {label: 'Injected fault', value: c => humanize(c.name)},
+        {label: 'Check', value: c => badge(c.passed ? 'Caught' : 'Missed', c.passed ? 'good' : 'crit')},
+      ], report.fault_cases, 'No faults were injected.');
+      $('researchNote').textContent = NOTES.stress;
+    }
+
+    async function fetchJson(url, options) {
+      const response = await fetch(url, options);
+      let data;
+      try { data = await response.json(); } catch (error) { throw new Error(`Unexpected response (HTTP ${response.status})`); }
+      if (!response.ok) throw Object.assign(new Error(data.error || `Request failed (HTTP ${response.status})`), {status: response.status});
+      return data;
+    }
+
+    async function runReplay(event) {
+      if (event) event.preventDefault();
+      const source = selectedSource(), button = $('runButton');
+      let url = '', options, working = '';
+      if (source === 'gld') { url = '/api/simulation/gld'; working = 'Replaying the private GLD import…'; }
+      else if (source === 'synthetic') {
+        if (!$('runForm').reportValidity()) return;
+        url = `/api/simulation?seed=${encodeURIComponent($('seed').value)}&days=${encodeURIComponent($('days').value)}`; working = 'Replaying synthetic bars…';
+      } else if (source === 'stress') { url = '/api/stress?seeds=12&days=360'; working = 'Running 12 seeds and fault checks…'; }
+      else {
+        const file = $('localFile').files[0];
+        if (!file) { setMessage('Choose a CSV file first.', true); return; }
+        if (file.size > 2000000) { setMessage('That CSV is larger than 2 MB.', true); return; }
+        url = `/api/simulation/local?filename=${encodeURIComponent(file.name)}`;
+        options = {method: 'POST', headers: {'Content-Type': 'text/csv'}, body: file}; working = 'Analysing the CSV in memory…';
+      }
+      button.disabled = true; setMessage(working);
+      const frame = source === 'stress' ? $('stressContent') : $('runContent');
+      frame.classList.add('loading'); frame.setAttribute('aria-busy', 'true');
+      try {
+        const data = await fetchJson(url, options);
+        if (source === 'stress') { renderStress(data); setMessage(data.passed ? 'Stress suite passed · synthetic checks only' : 'Stress suite failed · inspect the failing rows', !data.passed); }
+        else { renderRun(data); setMessage(`Run ${data.run_id.slice(0, 8)} complete · ${count(data.days)} bars · no external calls`); }
+        return true;
+      } catch (error) {
+        setMessage(error.message, true);
+        return false;
+      } finally {
+        button.disabled = false; frame.classList.remove('loading'); frame.removeAttribute('aria-busy');
+      }
+    }
+
+    /* ---------------- paper ---------------- */
+    function renderPaper(payload) {
+      const status = payload.status, plan = payload.latest_plan, account = status.account, clock = status.clock;
+      const recon = status.reconciliation, drawdown = status.drawdown, kill = status.kill_switch;
+      $('paperContent').hidden = false; $('paperError').hidden = true;
+
+      const killCallout = $('killCallout');
+      if (kill) {
+        killCallout.className = 'callout crit'; $('killIcon').textContent = '✕';
+        $('killTitle').textContent = 'Kill switch engaged · no plans or orders can run';
+        $('killText').textContent = `${kill.reason || 'No reason recorded'}${kill.engaged_at ? ` · since ${fmtStamp(kill.engaged_at)}` : ''}. Review, then run: python -m tradenow paper-resume --confirm`;
+      } else if (!recon.ok) {
+        killCallout.className = 'callout warn'; $('killIcon').textContent = '!';
+        $('killTitle').textContent = 'Ledger and Alpaca disagree';
+        $('killText').textContent = 'The next paper-plan or paper-submit will engage the kill switch. See Reconciliation below.';
+      } else {
+        killCallout.className = 'callout good'; $('killIcon').textContent = '✓';
+        $('killTitle').textContent = 'Kill switch clear · ledger matches Alpaca';
+        $('killText').textContent = 'New plans and approved orders are allowed. The kill switch engages automatically on any reconciliation mismatch.';
+      }
+
+      setText('pEquity', money(account.equity));
+      $('pEquityNote').textContent = drawdown.peak_equity ? `Peak ${money(drawdown.peak_equity)}` : 'Peak recorded at first plan';
+      setText('pCash', money(account.cash));
+      setText('pShares', count(recon.alpaca_shares));
+      $('pSharesNote').textContent = `${recon.open_orders} open order${recon.open_orders === 1 ? '' : 's'}`;
+      setText('pMarket', clock.is_open ? 'Open' : 'Closed');
+      $('pMarketNote').textContent = `${clock.is_open ? 'Closes' : 'Next open'} ${fmtStamp(clock.is_open ? clock.next_close : clock.next_open)}`;
+      const current = Number(drawdown.current_pct), limit = 10, share = Math.min(1, current / limit);
+      setText('pDrawdown', pct(current));
+      const meter = $('pMeter');
+      meter.className = 'meter' + (share >= 1 ? ' crit' : share >= 0.6 ? ' warn' : '');
+      meter.firstElementChild.style.width = (share * 100).toFixed(1) + '%';
+      meter.setAttribute('aria-valuenow', current.toFixed(2));
+      $('pDrawdownNote').textContent = drawdown.halt ? `Halted ${fmtStamp(drawdown.halt.triggered_at)} · entries blocked` : 'Limit 10% of peak · checked at planning';
+
+      $('reconBadge').replaceChildren(recon.ok ? badge('Matched', 'good') : badge('Mismatch', 'crit'));
+      $('reconList').replaceChildren(
+        h('dt', {text: 'Ledger GLD shares'}), h('dd', {text: count(recon.ledger_shares)}),
+        h('dt', {text: 'Alpaca GLD shares'}), h('dd', {text: count(recon.alpaca_shares)}),
+        h('dt', {text: 'Open orders'}), h('dd', {text: count(recon.open_orders)}),
+        h('dt', {text: 'Account'}), h('dd', {text: `${account.paper ? 'Paper' : 'NOT PAPER'} · ${humanize(account.status)}${account.trading_blocked ? ' · trading blocked' : ''}`}));
+      $('reconProblems').replaceChildren(...recon.problems.map(problem => h('li', {class: 'code', text: problem})));
+
+      renderPlan(plan, clock);
+      table('orderTable', [
+        {label: 'Session', value: o => fmtDay(o.session)},
+        {label: 'Side', value: o => badge(o.side === 'buy' ? 'Buy' : 'Sell', o.side === 'buy' ? 'accent' : '')},
+        {label: 'Qty', value: o => count(o.qty), num: true},
+        {label: 'Limit', value: o => o.limit_price ? money(o.limit_price) : 'Market', num: true},
+        {label: 'Filled', value: o => count(o.filled_qty), num: true},
+        {label: 'Avg price', value: o => o.filled_avg_price ? money(o.filled_avg_price) : '—', num: true},
+        {label: 'Status', value: o => badge(humanize(o.status), o.status === 'filled' ? 'good' : ['rejected', 'not_found'].includes(o.status) ? 'crit' : ['canceled', 'expired'].includes(o.status) ? '' : 'warn')},
+        {label: 'Client order ID', value: o => o.client_order_id, cls: () => 'code'},
+      ], [...status.recent_orders].reverse(), 'No paper orders yet.');
+    }
+
+    function renderPlan(plan, clock) {
+      const body = $('planBody');
+      if (!plan) {
+        $('planSub').textContent = 'No plan saved yet';
+        $('planBadge').replaceChildren();
+        body.replaceChildren(h('p', {class: 'empty', text: 'Run python -m tradenow paper-plan after the close to create one.'}));
+        return;
+      }
+      const expired = clock.is_open || plan.session_open !== clock.next_open;
+      $('planSub').textContent = `For the session opening ${fmtStamp(plan.session_open)} · created ${fmtStamp(plan.created_at)}`;
+      const tone = {BUY: 'accent', SELL: 'warn', REJECTED: 'crit'}[plan.action] || '';
+      $('planBadge').replaceChildren(...[badge(humanize(plan.action), tone), expired ? h('span', {text: ' '}) : null, expired ? badge('Expired', 'crit') : null].filter(Boolean));
+      const signal = plan.signal, order = plan.order;
+      const rows = [
+        ['Decision', `${humanize(plan.action)} · ${humanize(plan.reason)}`],
+        ['Strategy', plan.selected_hypothesis || 'No trade (selection gate)'],
+        signal ? ['Signal', `SMA ${signal.fast_window} ${money(signal.fast_sma)} ${signal.strategy_target ? '>' : '≤'} SMA ${signal.slow_window} ${money(signal.slow_sma)} → ${signal.strategy_target ? 'long' : 'flat'}`] : null,
+        ['Data', `Tiingo through ${fmtDay(plan.data.last_date)} · close ${money(plan.data.reference_close)} · ${plan.data.alpaca_sip_sessions_compared} Alpaca sessions cross-checked`],
+        ['Position', `${count(plan.position_before)} shares → target ${plan.target ? 'long' : 'flat'}`],
+        ['Drawdown', `${pct(plan.drawdown.current_pct)} of peak ${money(plan.drawdown.peak_equity)}${plan.drawdown.halted ? ' · halted' : ''}`],
+        order ? ['Order', `${humanize(order.side)} ${count(order.qty)} GLD · ${order.type === 'limit' ? `limit ${money(order.limit_price)}` : 'market'} · day`] : null,
+      ].filter(Boolean);
+      const list = h('dl', {class: 'kv'}, ...rows.flatMap(([k, v]) => [h('dt', {text: k}), h('dd', {text: v})]));
+      const parts = [list];
+      if (order && !expired) {
+        const command = `python -m tradenow paper-submit --approve ${plan.plan_id}`;
+        const copy = h('button', {class: 'btn small', type: 'button', text: 'Copy'});
+        copy.addEventListener('click', async () => {
+          try { await navigator.clipboard.writeText(command); copy.textContent = 'Copied'; }
+          catch (error) { copy.textContent = 'Select and copy'; }
+          setTimeout(() => { copy.textContent = 'Copy'; }, 1800);
+        });
+        parts.push(h('p', {class: 'card-foot', text: 'Approve before the session opens:'}), h('div', {class: 'command'}, h('code', {text: command}), copy));
+      } else if (expired) {
+        parts.push(h('p', {class: 'card-foot', text: 'This plan is past its session and can no longer be submitted. Run paper-plan after the next close.'}));
+      }
+      body.replaceChildren(...parts);
+    }
+
+    let paperLoaded = false;
+    async function loadPaper() {
+      const button = $('paperRefresh');
+      button.disabled = true; $('paperChecked').textContent = 'Checking Alpaca paper account…';
+      $('paperContent').classList.add('loading');
+      $('modeDot').className = 'dot';
+      try {
+        const payload = await fetchJson('/api/paper/status');
+        renderPaper(payload); paperLoaded = true;
+        $('paperChecked').textContent = `Checked ${new Date().toLocaleTimeString([], {hour: 'numeric', minute: '2-digit', second: '2-digit'})}`;
+        const tone = payload.status.kill_switch ? 'crit' : payload.status.reconciliation.ok ? 'good' : 'warn';
+        $('modeDot').className = 'dot ' + tone;
+      } catch (error) {
+        $('paperError').hidden = false;
+        $('paperErrorText').textContent = error.status === 404
+          ? 'This dashboard server was started before the paper view existed. Stop it with Ctrl+C and run python -m tradenow web again.'
+          : `${error.message}. Check the ALPACA_PAPER_* values in .env.local and the network connection.`;
+        $('paperChecked').textContent = '';
+        $('modeDot').className = 'dot crit';
+      } finally {
+        button.disabled = false; $('paperContent').classList.remove('loading');
+      }
+    }
+
+    /* ---------------- routing ---------------- */
+    function route() {
+      const paper = location.hash === '#paper';
+      $('researchView').hidden = paper; $('paperView').hidden = !paper;
+      $('tabResearch').setAttribute('aria-selected', String(!paper));
+      $('tabPaper').setAttribute('aria-selected', String(paper));
+      $('modeText').textContent = paper ? 'Alpaca paper · read-only' : 'Offline replay · no broker calls';
+      if (!paper) $('modeDot').className = 'dot';
+      if (paper && !paperLoaded) loadPaper();
+      document.title = paper ? 'Paper trading · Tradenow' : 'Research · Tradenow';
+    }
+
+    /* ---------------- wiring ---------------- */
+    $('sourcePicker').addEventListener('change', showSourceFields);
+    $('localFile').addEventListener('change', () => {
+      const file = $('localFile').files[0];
+      $('fileName').textContent = file ? `${file.name} · ${(file.size / 1024).toFixed(0)} KB` : 'No file chosen';
+    });
+    $('runForm').addEventListener('submit', runReplay);
+    $('paperRefresh').addEventListener('click', loadPaper);
+    window.addEventListener('hashchange', route);
+
+    (async function start() {
+      try {
+        const saved = localStorage.getItem('tradenow.source');
+        const input = saved && !['local', 'stress'].includes(saved) && document.querySelector(`input[name="source"][value="${saved}"]`);
+        if (input) input.checked = true;
+      } catch (error) { /* storage unavailable */ }
+      showSourceFields();
+      route();
+      const ok = await runReplay();
+      if (!ok && selectedSource() === 'gld') {
+        document.querySelector('input[name="source"][value="synthetic"]').checked = true;
+        showSourceFields();
+        const reason = $('message').textContent;
+        await runReplay();
+        setMessage(`No GLD import could be replayed (${reason}). Showing a synthetic run instead.`);
+      }
+    })();
   </script>
 </body>
 </html>
