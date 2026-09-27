@@ -107,9 +107,13 @@ def paper_view(store: PaperStore | None = None, client=None) -> dict:
     return {"status": paper_status(client, store), "latest_plan": store.latest_plan()}
 
 
+# Only loopback names are accepted, which blocks DNS-rebinding requests.
+LOCAL_HOST = re.compile(r"(?:127\.0\.0\.1|localhost)(?::\d{1,5})?")
+
+
 def _is_local(scope) -> bool:
     host = dict(scope.get("headers", [])).get(b"host", b"").decode("ascii", errors="ignore")
-    return re.fullmatch(r"127\.0\.0\.1(?::\d{1,5})?", host) is not None
+    return LOCAL_HOST.fullmatch(host) is not None
 
 
 async def _read_csv(receive) -> bytes:
@@ -145,8 +149,8 @@ async def app(scope, receive, send) -> None:
         host = headers.get(b"host", b"").decode("ascii", errors="ignore")
         origin = headers.get(b"origin", b"").decode("ascii", errors="ignore")
         content_type = headers.get(b"content-type", b"").decode("ascii", errors="ignore")
-        if (not re.fullmatch(r"127\.0\.0\.1(?::\d{1,5})?", host)
-                or origin != f"http://{host}" or content_type != "text/csv"):
+        if (not _is_local(scope) or origin != f"http://{host}"
+                or content_type != "text/csv"):
             await _respond(send, 403, b'{"error":"Local CSV requests must come from this dashboard"}',
                            b"application/json")
             return

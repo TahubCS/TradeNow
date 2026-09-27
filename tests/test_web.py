@@ -132,3 +132,18 @@ class WebTests(unittest.IsolatedAsyncioTestCase):
                                          headers=[(b"host", b"127.0.0.1:8000")])
         self.assertEqual(status, 400)
         self.assertIn("ALPACA_PAPER_KEY_ID", json.loads(body)["error"])
+
+    async def test_localhost_and_loopback_ip_are_both_local(self):
+        with patch("tradenow.web.paper_view", return_value={"status": {}, "latest_plan": None}):
+            for host in (b"localhost:8000", b"127.0.0.1:8000", b"localhost"):
+                status, _ = await request("/api/paper/status", headers=[(b"host", host)])
+                self.assertEqual(status, 200, host)
+            for host in (b"evil.example:8000", b"localhost.evil.example", b"127.0.0.1.nip.io"):
+                status, _ = await request("/api/paper/status", headers=[(b"host", host)])
+                self.assertEqual(status, 403, host)
+        source = bars_to_csv(generate_bars(3, 180)).encode()
+        status, _ = await request("/api/simulation/local", "filename=mgc.csv", "POST", source,
+                                  [(b"host", b"localhost:8000"),
+                                   (b"origin", b"http://localhost:8000"),
+                                   (b"content-type", b"text/csv")])
+        self.assertEqual(status, 200)
