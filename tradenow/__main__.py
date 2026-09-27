@@ -278,8 +278,17 @@ def replay_main(argv: list[str], run: Run) -> int:
     return 0
 
 
+def notify_test_main(argv: list[str], run: Run) -> int:
+    """Show one test notification and report exactly what Windows did."""
+    argparse.ArgumentParser(prog="tradenow notify-test",
+                            description="Send a test desktop notification").parse_args(argv)
+    result = desktop_notify("TradeNow test", "If you can read this, notifications work.")
+    _emit(run, {"result": "SHOWN" if result["shown"] else "NOT_SHOWN", **result})
+    return 0 if result["shown"] else 1
+
+
 COMMANDS = {"offline": offline_main, "stress": stress_main, "web": web_main,
-            "tiingo-import": tiingo_main, "gld": gld_main}
+            "tiingo-import": tiingo_main, "gld": gld_main, "notify-test": notify_test_main}
 
 
 def main(argv: list[str] | None = None) -> int:

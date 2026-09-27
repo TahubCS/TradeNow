@@ -245,6 +245,11 @@ Risk rules applied every evening:
   GLD's 20-day average volume.
 - **Kill switch:** `paper-halt` stops every scheduled run until you resume.
 
+Check notifications with `python -m tradenow notify-test`: it shows a test
+notification and prints what Windows did, or the exact error. If nothing
+appears, check that Do Not Disturb is off, and that notifications from
+"Windows PowerShell" are allowed under Settings → System → Notifications.
+
 You get a Windows desktop notification when an order is sent or finishes, when
 a run is blocked or cannot start (at most once a day each), and when the
 live-trading gate verdict changes. Every run is also in

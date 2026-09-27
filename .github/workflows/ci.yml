@@ -36,3 +36,7 @@ jobs:
           [System.Management.Automation.Language.Parser]::ParseFile(
             "$PWD/scripts/schedule-windows.ps1", [ref]$null, [ref]$errors) | Out-Null
           if ($errors) { $errors | ForEach-Object { Write-Error $_.ToString() }; exit 1 }
+      - name: Try a desktop notification (informational; runners have no visible desktop)
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        run: python -m tradenow notify-test
