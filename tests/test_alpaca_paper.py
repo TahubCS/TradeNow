@@ -23,7 +23,8 @@ from tradenow.alpaca_paper import (
 
 ACCOUNT = {"account_number": "PA3EXAMPLE", "status": "ACTIVE", "currency": "USD",
            "cash": "100000", "equity": "100000", "trading_blocked": False,
-           "account_blocked": False, "trade_suspended_by_user": False}
+           "account_blocked": False, "trade_suspended_by_user": False,
+           "last_equity": "99500"}
 ORDER = {"id": "b1", "client_order_id": "tn-gld-20260928-buy-abc", "symbol": "GLD",
          "side": "buy", "qty": "10", "filled_qty": "0", "filled_avg_price": None,
          "status": "accepted"}

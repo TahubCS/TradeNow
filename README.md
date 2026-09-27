@@ -10,6 +10,19 @@ contact Databento. The separate, manual `tiingo-import` command fetches GLD
 end-of-day ETF data when explicitly run, and the `paper-*` commands trade GLD in
 an Alpaca **paper** account only after a person approves each order.
 
+## Live-trading gate: read this first
+
+**No real money is traded unless a strategy passes the live-trading gate
+([ADR-008](docs/decisions.md)).** It must beat plain buy-and-hold out of sample,
+after costs, over enough trades, both in historical rolling tests and in at
+least one year of forward paper trading. Until a strategy passes, a low-cost
+index fund or simply holding GLD would very likely do better than anything this
+system trades. The current SMA strategy fails the gate.
+
+The system checks the gate for you. `python -m tradenow gld`, `paper-report`,
+`paper-auto`, and the dashboard all show its verdict, and `paper-auto` sends a
+desktop notification whenever the verdict changes.
+
 ## Run locally
 
 Requires Python 3.11 or newer. No packages need to be installed.
@@ -188,6 +201,55 @@ the open, time from the open to the fill, dollar cost against the simulation,
 and run-log health: outcomes, block codes, reconciliation failures, and
 repeated submits. A fill's open-based comparisons appear after the next Tiingo
 import includes its session. The dashboard's paper view shows the same summary.
+
+## Automated paper trading (paper-auto)
+
+`paper-auto` runs the daily routine without you: it imports the close, plans,
+sends the order (only if you allow it), measures execution, and checks the
+live-trading gate. It uses the same safety path as the manual commands, and
+only the Alpaca **paper** account can be reached ([ADR-009](docs/decisions.md)).
+
+1. Copy `risk.example.toml` to `data/private/risk.toml` and adjust it. Every
+   value has a hard ceiling in code; a typo, an unknown key, or a value over a
+   ceiling stops the run instead of trading.
+2. Try it by hand. With `auto_submit = false` (the default) it only plans:
+
+   ```powershell
+   python -m tradenow paper-auto            # evening: import, plan, maybe submit
+   python -m tradenow paper-auto --dry-run  # never submits, whatever risk.toml says
+   python -m tradenow paper-auto --check    # morning: reconcile and report fills
+   ```
+
+3. Schedule it on Windows (runs as you, without administrator rights, only
+   while you are logged on):
+
+   ```powershell
+   .\scripts\schedule-windows.ps1 -Python C:\path\to\python.exe
+   .\scripts\schedule-windows.ps1 -Remove   # to stop
+   ```
+
+   Evening runs repeat every 30 minutes from 6:30 to 10:30 pm Eastern on
+   weekdays. The first run after Tiingo publishes the close does the work, and
+   later runs exit quickly. The morning check runs at 10:00 am Eastern.
+4. Run about 5 sessions as a dry run next to your manual approvals, then set
+   `auto_submit = true`.
+
+Risk rules applied every evening:
+
+- **Daily loss limit** (default 2%): a loss since the previous close sells at
+  the next open and skips one session, then buying resumes. If Alpaca does not
+  report the previous close's equity, buys are blocked.
+- **Drawdown halt** (default 10%): sells, and blocks buys until
+  `paper-resume --confirm`.
+- **Position and volume caps:** cash only, never margin; a buy is at most 1% of
+  GLD's 20-day average volume.
+- **Kill switch:** `paper-halt` stops every scheduled run until you resume.
+
+You get a Windows desktop notification when an order is sent or finishes, when
+a run is blocked or cannot start (at most once a day each), and when the
+live-trading gate verdict changes. Every run is also in
+`data/private/logs/runs.jsonl` and on the dashboard. The order-by-order record
+states whether you or paper-auto approved each order.
 
 ## Local dashboard
 

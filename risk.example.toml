@@ -1,0 +1,25 @@
+# Copy to data/private/risk.toml (or $TRADENOW_DATA_DIR/risk.toml) and edit.
+# Every value has a hard ceiling in tradenow/risk_config.py; a value above it,
+# an unknown key, or a typo stops the command rather than trading.
+# Changing any value restarts the live-trading gate's forward count (ADR-008).
+
+# Largest GLD position, as a share of cash. Never margin. Ceiling 1.00.
+max_position_fraction = 0.50
+
+# Loss since the previous close that triggers a sale at the next open and
+# skips one session. Ceiling 0.05.
+daily_loss_limit_fraction = 0.02
+
+# Drop from peak equity that sells and blocks new buys until paper-resume.
+# Ceiling 0.25.
+max_drawdown_fraction = 0.10
+
+# Buy limit price above the last close. Ceiling 0.03.
+buy_limit_buffer = 0.01
+
+# Largest buy as a share of GLD's 20-day average volume. Ceiling 0.05.
+max_volume_fraction = 0.01
+
+# false: paper-auto plans only (dry run). true: paper-auto submits orders
+# to the Alpaca PAPER account without asking. There is no live mode.
+auto_submit = false

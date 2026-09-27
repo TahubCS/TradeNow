@@ -147,6 +147,9 @@ Only add sources that can be timestamped and historically reproduced.
 
 Prerequisites:
 
+- a strategy that passes the live-trading gate (ADR-008): it must beat plain
+  buy-and-hold out of sample, after costs, over enough trades, in both
+  historical research and at least one year of forward paper trading,
 - stable paper-trading history,
 - reconciliation tested,
 - risk rules tested,

@@ -16,6 +16,7 @@ from .equity import EquityBar
 BUY_LIMIT_BUFFER = Decimal("0.01")
 CLOSE_TOLERANCE = Decimal("0.005")
 MIN_OVERLAP_SESSIONS = 5
+VOLUME_LOOKBACK_SESSIONS = 20
 # Local-only statuses: written before the POST, and for an order Alpaca never received.
 SUBMITTING = "submitting"
 NOT_FOUND = "not_found"
@@ -48,6 +49,8 @@ class LedgerOrder:
     sent_at: datetime | None = None
     submitted_at: datetime | None = None
     filled_at: datetime | None = None
+    # Who approved sending it: a person ("manual") or paper-auto ("auto").
+    approval: str = "manual"
 
     @property
     def is_final(self) -> bool:
@@ -75,6 +78,14 @@ class Drawdown:
     peak_equity: Decimal
     equity: Decimal
     fraction: Decimal
+    breached: bool
+
+
+@dataclass(frozen=True)
+class DailyLoss:
+    last_equity: Decimal | None
+    equity: Decimal
+    fraction: Decimal | None
     breached: bool
 
 
@@ -181,17 +192,42 @@ def measure_drawdown(peak: Decimal | None, equity: Decimal,
     return Drawdown(new_peak, equity, fraction, fraction >= threshold)
 
 
+def measure_daily_loss(last_equity: Decimal | None, equity: Decimal,
+                       limit: Decimal) -> DailyLoss:
+    """Loss since the previous close. An unknown baseline counts as breached (fail closed)."""
+    if last_equity is None or not last_equity.is_finite() or last_equity <= 0:
+        return DailyLoss(last_equity, equity, None, True)
+    fraction = max(Decimal(0), (last_equity - equity) / last_equity)
+    return DailyLoss(last_equity, equity, fraction, fraction >= limit)
+
+
+def volume_cap(bars: list[EquityBar], fraction: Decimal) -> int:
+    """Largest buy allowed: a fraction of the recent average daily volume."""
+    recent = bars[-VOLUME_LOOKBACK_SESSIONS:]
+    if not recent:
+        return 0
+    average = Decimal(sum(bar.volume for bar in recent)) / len(recent)
+    return int((average * fraction).to_integral_value(rounding=ROUND_DOWN))
+
+
 def plan_order(target: int, shares: int, cash: Decimal, reference_close: Decimal,
-               max_position_fraction: Decimal, commission: Decimal) -> PlannedAction:
-    """Size a buy from cash like the simulator; never use margin buying power."""
+               max_position_fraction: Decimal, commission: Decimal,
+               buy_limit_buffer: Decimal = BUY_LIMIT_BUFFER,
+               max_buy_shares: int | None = None) -> PlannedAction:
+    """Size a buy from cash like the simulator; never use margin buying power.
+    Sells are never reduced: an exit must always be possible."""
     if target and not shares:
-        limit = (reference_close * (1 + BUY_LIMIT_BUFFER)).quantize(
+        limit = (reference_close * (1 + buy_limit_buffer)).quantize(
             Decimal("0.01"), rounding=ROUND_HALF_UP)
         budget = cash * max_position_fraction - commission
         qty = max(0, int((budget / limit).to_integral_value(rounding=ROUND_DOWN)))
         if qty == 0:
             return PlannedAction("REJECTED", "INSUFFICIENT_CASH"
                                  if cash < limit + commission else "POSITION_LIMIT")
+        if max_buy_shares is not None and qty > max_buy_shares:
+            if max_buy_shares <= 0:
+                return PlannedAction("REJECTED", "VOLUME_LIMIT")
+            return PlannedAction("BUY", "VOLUME_LIMIT", max_buy_shares, limit)
         return PlannedAction("BUY", "STRATEGY_SIGNAL", qty, limit)
     if not target and shares:
         return PlannedAction("SELL", "CLOSE_POSITION", shares)

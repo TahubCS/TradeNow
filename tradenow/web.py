@@ -13,6 +13,7 @@ from .alpaca_paper import PaperClient, load_paper_credentials
 from .gld_research import MAX_GLD_CSV_BYTES, latest_imported_gld, run_gld_csv
 from .offline import run_local_csv, run_offline
 from .paper_trading import PaperStore, paper_report, paper_status
+from .risk_config import load_risk
 from .stress import run_stress
 
 
@@ -104,8 +105,9 @@ def paper_view(store: PaperStore | None = None, client=None) -> dict:
     """Read-only paper snapshot; never plans, submits, or changes the kill switch."""
     store = store or PaperStore()
     client = client or PaperClient(load_paper_credentials())
-    return {"status": paper_status(client, store), "latest_plan": store.latest_plan(),
-            "execution": execution_view(store)}
+    return {"status": paper_status(client, store, load_risk()),
+            "latest_plan": store.latest_plan(), "execution": execution_view(store),
+            "auto": store.auto_status(), "live_gate": store.saved_gate()}
 
 
 def execution_view(store: PaperStore) -> dict:

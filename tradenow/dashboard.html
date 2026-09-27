@@ -425,6 +425,13 @@
         </article>
 
         <article class="card">
+          <div class="card-head"><div><h2>Automation and live-trading gate</h2><p class="sub">paper-auto runs on a schedule; the gate (ADR-008) decides whether real money may even be considered</p></div><span id="gateBadge"></span></div>
+          <dl class="kv" id="autoList"></dl>
+          <ul class="problems" id="gateFailing"></ul>
+          <p class="card-foot" id="gateMeaning">No real money is traded unless a strategy beats plain buy-and-hold out of sample, after costs.</p>
+        </article>
+
+        <article class="card">
           <div class="card-head"><div><h2>Execution quality</h2><p class="sub" id="execSub">Fills against the plan's close, the session open, and the backtest's simulated fill</p></div></div>
           <dl class="kv" id="execList"></dl>
           <p class="card-foot">Slippage is in basis points; positive is a cost. Per-order detail: <code>python -m tradenow paper-report</code></p>
@@ -928,6 +935,27 @@
         {label: 'Client order ID', value: o => o.client_order_id, cls: () => 'code'},
       ], [...status.recent_orders].reverse(), 'No paper orders yet.');
       renderExecution(payload.execution);
+      renderAutomation(payload, status);
+    }
+
+    function renderAutomation(payload, status) {
+      const auto = payload.auto, gate = payload.live_gate, risk = status.risk, daily = status.daily_loss;
+      const settings = risk ? risk.settings : null;
+      const rows = [
+        ['Mode', settings ? (settings.auto_submit === 'True' ? 'Auto-submit ON (paper account only)' : 'Dry run: plans only, nothing sent') : '—'],
+        ['Last automated run', auto ? `${humanize(auto.result || 'unknown')}${auto.finished_at ? ` · ${fmtStamp(auto.finished_at)}` : ''}` : 'Not run yet'],
+        ['Loss since previous close', daily ? `${daily.current_pct === null ? 'unknown (buys blocked)' : pct(daily.current_pct)} of ${pct(daily.limit_pct)} limit${daily.breached ? ' · breached' : ''}` : '—'],
+        ['Risk settings', risk ? risk.source : '—'],
+      ];
+      $('autoList').replaceChildren(...rows.flatMap(([k, v]) => [h('dt', {text: k}), h('dd', {text: v})]));
+      if (!gate) {
+        $('gateBadge').replaceChildren(badge('Not checked yet', ''));
+        $('gateFailing').replaceChildren();
+        return;
+      }
+      $('gateBadge').replaceChildren(gate.verdict === 'PASS' ? badge('Gate passed', 'good') : badge('Gate: not proven', 'crit'));
+      $('gateFailing').replaceChildren(...gate.failing_checks.map(check => h('li', {class: 'code', text: check})));
+      $('gateMeaning').textContent = gate.meaning;
     }
 
     function renderExecution(execution) {

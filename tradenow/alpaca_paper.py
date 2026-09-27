@@ -57,6 +57,8 @@ class Account:
     equity: Decimal
     is_paper_account: bool
     trading_blocked: bool
+    # Equity at the previous trading day's close; the daily loss limit's baseline.
+    last_equity: Decimal | None = None
 
 
 @dataclass(frozen=True)
@@ -247,7 +249,8 @@ def parse_account(raw: object) -> Account:
                    cash=_decimal(item.get("cash"), "cash"),
                    equity=_decimal(item.get("equity"), "equity"),
                    is_paper_account=_text(item, "account_number").startswith("PA"),
-                   trading_blocked=blocked)
+                   trading_blocked=blocked,
+                   last_equity=_decimal(item.get("last_equity"), "last_equity"))
 
 
 def parse_clock(raw: object) -> Clock:

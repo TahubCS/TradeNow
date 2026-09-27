@@ -101,6 +101,9 @@ paper-plan: kill switch? -> paper account? -> market closed? -> reconcile
 paper-submit --approve ID: kill switch? -> plan unchanged and not expired
             -> reconcile -> ledger write -> POST with client order ID
 paper-report: ledger + plans + Tiingo history + run log -> execution quality
+paper-auto: lock -> kill switch? -> tiingo import/refresh -> paper-plan (risk.toml)
+            -> paper-submit (approval=auto, only if auto_submit) -> live gate
+paper-auto --check: lock -> kill switch? -> reconcile -> notify finished orders
 ```
 
 Each ledger order stores the plan's reference close and the time it was sent.

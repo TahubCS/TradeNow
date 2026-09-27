@@ -17,7 +17,7 @@ from tradenow.logs import (
     recorded_run,
     register_secret,
 )
-from tradenow.paper_trading import PaperBlocked
+from tradenow.paper_trading import PaperBlocked, PaperStore
 
 
 class RunLogTests(unittest.TestCase):
@@ -73,6 +73,20 @@ class RunLogTests(unittest.TestCase):
             with recorded_run("paper-status", blocked, "paper") as run:
                 run.exit_code = 0
         self.assertIn("run log not written", stderr.getvalue())
+
+    def test_paper_auto_that_cannot_start_is_notified_once_a_day(self):
+        environment = {"TRADENOW_DATA_DIR": str(self.log_dir), "ALPACA_PAPER_ENDPOINT": "",
+                       "ALPACA_PAPER_KEY_ID": "", "ALPACA_PAPER_SECRET_KEY": ""}
+        with patch.dict("os.environ", environment), \
+                patch("tradenow.alpaca_paper.PROJECT_ROOT", self.log_dir), \
+                patch("tradenow.__main__.PaperStore",
+                      lambda: PaperStore(self.log_dir / "alpaca")), \
+                patch("tradenow.__main__.desktop_notify") as notify, \
+                redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            self.assertEqual(main(["paper-auto"]), 1)
+            self.assertEqual(main(["paper-auto"]), 1)
+        notify.assert_called_once()
+        self.assertEqual(notify.call_args.args[0], "Paper-auto cannot start")
 
     def test_damaged_run_log_lines_are_skipped(self):
         (self.log_dir / RUN_FILE).write_text('{"outcome": "OK"}\nnot json\n', encoding="utf-8")

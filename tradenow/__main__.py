@@ -13,7 +13,9 @@ from .alpaca_paper import PaperClient, load_paper_credentials
 from .gld_research import MAX_GLD_CSV_BYTES, latest_imported_gld, run_gld_csv, save_gld_report
 from .logs import Run, configure_logging, recorded_run
 from .market_data import load_bars
+from .notify import desktop_notify
 from .offline import MAX_LOCAL_CSV_BYTES, run_local_csv, run_offline, save_offline
+from .paper_auto import GLD_HISTORY_START, Notices, paper_auto
 from .paper_trading import (
     PaperStore,
     paper_halt,
@@ -23,10 +25,11 @@ from .paper_trading import (
     paper_status,
     paper_submit,
 )
+from .risk_config import load_risk
 from .settings import load_settings
 from .simulation import Config, simulate
 from .stress import run_stress, save_stress
-from .tiingo import import_gld, load_api_key
+from .tiingo import import_complete, import_gld, load_api_key
 
 
 def _fail(run: Run, error: BaseException) -> int:
@@ -159,6 +162,8 @@ def gld_main(argv: list[str], run: Run) -> int:
                       "holdout_summary": report["research"]["holdout_summary"],
                       "holdout_comparison": report["evaluation"]["holdout"],
                       "rolling_summary": report["evaluation"]["rolling_pre_holdout"]["summary"],
+                      "live_gate": {"verdict": report["live_gate"]["verdict"],
+                                    "failing_checks": report["live_gate"]["failing_checks"]},
                       "slippage_sensitivity": report["evaluation"]["slippage_sensitivity"],
                       "report_file": str(json_path.resolve()),
                       "readable_report": str(md_path.resolve())})
@@ -172,6 +177,26 @@ def _gld_source(path: Path | None) -> tuple[bytes, str]:
     if path.stat().st_size > MAX_GLD_CSV_BYTES:
         raise ValueError(f"GLD CSV exceeds {MAX_GLD_CSV_BYTES} bytes")
     return path.read_bytes(), path.name
+
+
+def _import_through(end: date) -> dict:
+    """paper-auto's import: skip a range that is already complete, else fetch or refresh."""
+    if import_complete(GLD_HISTORY_START, end):
+        return {"result": "ALREADY_COMPLETE"}
+    return import_gld(GLD_HISTORY_START, end, load_api_key())
+
+
+def _paper_auto_command(store: PaperStore, args: argparse.Namespace) -> dict:
+    """Scheduled runs have no terminal, so a failure to even start is notified too."""
+    try:
+        risk = load_risk()
+        client = PaperClient(load_paper_credentials())
+    except (OSError, ValueError) as error:
+        Notices(store, desktop_notify, date.today()).send(
+            f"setup:{type(error).__name__}", "Paper-auto cannot start", str(error))
+        raise
+    return paper_auto(client, store, risk, _import_through, lambda: _gld_source(None),
+                      desktop_notify, load_settings().log_dir, args.dry_run, args.check)
 
 
 def paper_main(command: str, argv: list[str], run: Run) -> int:
@@ -189,17 +214,29 @@ def paper_main(command: str, argv: list[str], run: Run) -> int:
                             help="Also sell the whole GLD position at market")
     elif command == "paper-resume":
         parser.add_argument("--confirm", action="store_true", required=True)
+    elif command == "paper-auto":
+        mode = parser.add_mutually_exclusive_group()
+        mode.add_argument("--dry-run", action="store_true",
+                          help="Plan only, even if risk.toml sets auto_submit = true")
+        mode.add_argument("--check", action="store_true",
+                          help="Morning check: reconcile and report fills; never trades")
     args = parser.parse_args(argv)
     store = PaperStore()
     try:
+        if command == "paper-auto":
+            result = _paper_auto_command(store, args)
+            _emit(run, result)
+            return 0
+        risk = load_risk()
         if command == "paper-report":
-            _emit(run, paper_report(store, *_gld_source(args.data)))
+            _emit(run, paper_report(store, *_gld_source(args.data), risk=risk,
+                                    include_gate=True))
             return 0
         client = PaperClient(load_paper_credentials())
         if command == "paper-status":
-            result = paper_status(client, store)
+            result = paper_status(client, store, risk)
         elif command == "paper-plan":
-            result = paper_plan(client, store, *_gld_source(args.data))
+            result = paper_plan(client, store, *_gld_source(args.data), risk)
         elif command == "paper-submit":
             result = paper_submit(client, store, args.approve)
         elif command == "paper-halt":
@@ -213,7 +250,7 @@ def paper_main(command: str, argv: list[str], run: Run) -> int:
 
 
 PAPER_COMMANDS = ("paper-status", "paper-plan", "paper-submit", "paper-halt", "paper-resume",
-                  "paper-report")
+                  "paper-report", "paper-auto")
 
 
 def replay_main(argv: list[str], run: Run) -> int:
@@ -221,7 +258,7 @@ def replay_main(argv: list[str], run: Run) -> int:
         description="Replay local MGC bars without network or broker access",
         epilog=("Use 'gld', 'offline', 'stress', 'web', or 'tiingo-import' for the research "
                 "tools, and 'paper-status', 'paper-plan', 'paper-submit', 'paper-halt', "
-                "'paper-resume', or 'paper-report' for Alpaca paper trading."),
+                "'paper-resume', 'paper-report', or 'paper-auto' for Alpaca paper trading."),
     )
     parser.add_argument("--data", type=Path,
                         default=Path(__file__).resolve().parent.parent / "sample_data" / "mgc_synthetic.csv",

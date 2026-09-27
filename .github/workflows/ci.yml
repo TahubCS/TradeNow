@@ -28,3 +28,11 @@ jobs:
         run: mypy
       - name: Test
         run: python -m unittest discover -s tests -v
+      - name: Parse the Task Scheduler script
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            "$PWD/scripts/schedule-windows.ps1", [ref]$null, [ref]$errors) | Out-Null
+          if ($errors) { $errors | ForEach-Object { Write-Error $_.ToString() }; exit 1 }

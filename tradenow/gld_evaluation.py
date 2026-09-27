@@ -10,6 +10,8 @@ from .offline import CANDIDATES
 ROLL_DEVELOPMENT_BARS = 504
 ROLL_VALIDATION_BARS = 126
 ROLL_TEST_BARS = 126
+# ADR-008 R4: the rolling result must survive ten times the default slippage.
+STRESSED_SLIPPAGE_PER_SHARE = Decimal("0.10")
 
 
 def _pct(value: Decimal) -> str:
@@ -53,6 +55,14 @@ def _turnover_pct(result: dict, starting_cash: Decimal) -> str:
     return _pct(traded / starting_cash * 100)
 
 
+def _compounded(returns_pct) -> str:
+    """Chain window returns as if each test began with the previous window's equity."""
+    growth = Decimal(1)
+    for value in returns_pct:
+        growth *= 1 + Decimal(value) / 100
+    return _pct((growth - 1) * 100)
+
+
 def _rolling_checks(bars: list[EquityBar], config: EquityConfig) -> dict:
     """Disjoint test blocks; every selection uses only earlier bars."""
     span = ROLL_DEVELOPMENT_BARS + ROLL_VALIDATION_BARS + ROLL_TEST_BARS
@@ -79,6 +89,7 @@ def _rolling_checks(bars: list[EquityBar], config: EquityConfig) -> dict:
         selected = best_name if best_score > 0 else None
         result = simulate_equity(test, replace(best_config, enable_entries=selected is not None))
         benchmark = _buy_and_hold(test, config, config.max_position_fraction)
+        full_benchmark = _buy_and_hold(test, config, Decimal(1))
         strategy_return = Decimal(result["total_return_pct"])
         benchmark_return = Decimal(benchmark["total_return_pct"])
         windows.append({"development_start": development[0].date.isoformat(),
@@ -90,6 +101,8 @@ def _rolling_checks(bars: list[EquityBar], config: EquityConfig) -> dict:
                         "strategy_warmup_bars": len(test) - len(result["signals"]),
                         "test_return_pct": result["total_return_pct"],
                         "buy_hold_50pct_return_pct": benchmark["total_return_pct"],
+                        "buy_hold_100pct_return_pct": full_benchmark["total_return_pct"],
+                        "closed_trades": len(result["closed_trades"]),
                         "beat_benchmark": strategy_return > benchmark_return})
     return {"development_bars": ROLL_DEVELOPMENT_BARS,
             "validation_bars": ROLL_VALIDATION_BARS,
@@ -101,7 +114,12 @@ def _rolling_checks(bars: list[EquityBar], config: EquityConfig) -> dict:
                         "positive_windows": sum(Decimal(item["test_return_pct"]) > 0
                                                 for item in windows),
                         "beat_buy_hold_50pct_windows": sum(item["beat_benchmark"]
-                                                           for item in windows)}}
+                                                           for item in windows),
+                        "closed_trades": sum(item["closed_trades"] for item in windows),
+                        "compounded_return_pct": _compounded(
+                            item["test_return_pct"] for item in windows),
+                        "compounded_buy_hold_100pct_return_pct": _compounded(
+                            item["buy_hold_100pct_return_pct"] for item in windows)}}
 
 
 def evaluate_gld(pre_holdout: list[EquityBar], holdout: list[EquityBar],
@@ -141,6 +159,10 @@ def evaluate_gld(pre_holdout: list[EquityBar], holdout: list[EquityBar],
                 "calendar_days": days},
             "slippage_sensitivity": scenarios,
             "rolling_pre_holdout": _rolling_checks(pre_holdout, config),
+            "rolling_pre_holdout_stressed": {
+                "slippage_per_share": str(STRESSED_SLIPPAGE_PER_SHARE),
+                "summary": _rolling_checks(pre_holdout, replace(
+                    config, slippage_per_share=STRESSED_SLIPPAGE_PER_SHARE))["summary"]},
             "notes": ["Buy-and-hold buys at the first holdout open and marks at the last close.",
                       "50% benchmark matches the strategy position cap; 100% is full exposure.",
                       "Cash assumes zero interest. Benchmarks do not use the strategy drawdown halt.",

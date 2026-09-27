@@ -179,6 +179,22 @@ def _replace_import(paths: tuple[Path, Path, Path], contents: tuple[bytes, bytes
         os.replace(temporary, path)
 
 
+def _paths(start: date, end: date, output_dir: Path) -> tuple[Path, Path, Path]:
+    stem = f"GLD-{start:%Y%m%d}-{end:%Y%m%d}"
+    return (output_dir / f"{stem}.csv", output_dir / f"{stem}.raw.json",
+            output_dir / f"{stem}.manifest.json")
+
+
+def import_complete(start: date, end: date, output_dir: Path = PRIVATE_DIR) -> bool:
+    """True when this range was already imported through its end date (no request needed)."""
+    manifest_path = _paths(start, end, output_dir)[2]
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        return _day(manifest.get("last_bar")) >= end
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, AttributeError, ValueError):
+        return False
+
+
 def import_gld(start: date, end: date, key: str, output_dir: Path = PRIVATE_DIR) -> dict:
     """Fetch one symbol with two requests, validate, then save private source files.
 
@@ -188,11 +204,8 @@ def import_gld(start: date, end: date, key: str, output_dir: Path = PRIVATE_DIR)
     """
     if start > end or end > date.today():
         raise ValueError("Expected start <= end <= today")
-    stem = f"GLD-{start:%Y%m%d}-{end:%Y%m%d}"
-    bars_path = output_dir / f"{stem}.csv"
-    raw_path = output_dir / f"{stem}.raw.json"
-    manifest_path = output_dir / f"{stem}.manifest.json"
-    paths = (bars_path, raw_path, manifest_path)
+    paths = _paths(start, end, output_dir)
+    bars_path, raw_path, manifest_path = paths
     previous = _previous_import(paths, end)
 
     base_url = "https://api.tiingo.com/tiingo/daily/GLD"
