@@ -1,6 +1,7 @@
 """Load and validate daily MGC bars from a local CSV."""
 
 import csv
+import datetime as dt
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -17,7 +18,7 @@ class Bar:
     low: Decimal
     close: Decimal
     volume: int
-    last_trade_date: date | None = None
+    last_trade_date: dt.date | None = None
     open_time_ct: datetime | None = None
 
 

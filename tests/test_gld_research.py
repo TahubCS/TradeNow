@@ -5,11 +5,10 @@ import unittest
 from datetime import date, timedelta
 from decimal import Decimal
 from io import StringIO
-from unittest.mock import patch
 
+from tests.test_tiingo import private_test_dir
 from tradenow.gld_research import latest_imported_gld, run_gld_csv
 from tradenow.tiingo import HEADER
-from tests.test_tiingo import private_test_dir
 
 
 def sample_gld_csv(count: int = 180) -> bytes:
@@ -72,11 +71,10 @@ class GldResearchTests(unittest.TestCase):
             manifest = {"provider": "Tiingo", "symbol": "GLD",
                         "bars_sha256": hashlib.sha256(source).hexdigest()}
             (directory / f"{stem}.manifest.json").write_text(json.dumps(manifest))
-            with patch("tradenow.gld_research.PRIVATE_DIR", directory):
-                self.assertEqual(latest_imported_gld(), (source, f"{stem}.csv"))
-                (directory / f"{stem}.csv").write_bytes(source + b"\n")
-                with self.assertRaisesRegex(ValueError, "does not match"):
-                    latest_imported_gld()
+            self.assertEqual(latest_imported_gld(directory), (source, f"{stem}.csv"))
+            (directory / f"{stem}.csv").write_bytes(source + b"\n")
+            with self.assertRaisesRegex(ValueError, "does not match"):
+                latest_imported_gld(directory)
 
 
 if __name__ == "__main__":

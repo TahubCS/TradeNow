@@ -60,6 +60,7 @@ class SimulatedBroker:
             self.entry_date = order.date
             self.entry_contract = order.contract
         else:
+            assert self.entry_price is not None  # a sell only follows a filled buy
             gross_pnl = (fill_price - self.entry_price) * self.multiplier
             self.cash += gross_pnl - self.commission_per_side
             self.closed_trades.append({"entry_date": self.entry_date,

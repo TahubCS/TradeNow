@@ -6,6 +6,7 @@ from dataclasses import replace
 from decimal import Decimal
 from io import StringIO
 from pathlib import Path
+from typing import Any
 
 from .market_data import Bar, parse_bars
 from .simulation import Config, simulate
@@ -77,7 +78,7 @@ def run_local_csv(source_bytes: bytes, filename: str = "local.csv",
                          source_name=safe_name), source_bytes
 
 
-def evaluate_candidates(bars: list, base_config: object, simulator) -> tuple:
+def evaluate_candidates(bars: list, base_config: Any, simulator) -> tuple:
     """Apply the same chronological selection gate to either instrument."""
     days = len(bars)
     development_end = days * 3 // 5

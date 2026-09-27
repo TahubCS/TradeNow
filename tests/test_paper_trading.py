@@ -7,13 +7,29 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 
-from tradenow.alpaca_paper import (Account, AlpacaError, BrokerOrder, Clock, DailyBar,
-                                   PaperOrder, Position)
+from tradenow.alpaca_paper import (
+    Account,
+    AlpacaError,
+    BrokerOrder,
+    Clock,
+    DailyBar,
+    PaperOrder,
+    Position,
+)
 from tradenow.equity import EquityConfig
 from tradenow.gld_research import parse_gld_csv
 from tradenow.paper_rules import NOT_FOUND, SUBMITTING
-from tradenow.paper_trading import (PaperBlocked, PaperStore, paper_halt, paper_plan,
-                                    paper_resume, paper_status, paper_submit)
+from tradenow.paper_trading import (
+    PaperBlocked,
+    PaperStore,
+    _reconciled,
+    paper_halt,
+    paper_plan,
+    paper_report,
+    paper_resume,
+    paper_status,
+    paper_submit,
+)
 
 
 EASTERN = timezone(timedelta(hours=-5))
@@ -249,6 +265,60 @@ class PaperWorkflowTests(unittest.TestCase):
         later = self.plan()
         self.assertEqual((later["action"], later["target"]), ("NO_TRADE", 0))
         self.assertIsNotNone(self.store.load_ledger().drawdown_halt)
+
+    def test_fill_is_measured_against_plan_open_and_simulation(self):
+        plan = self.plan()
+        paper_submit(self.broker, self.store, plan["plan_id"])
+        client_order_id = plan["order"]["client_order_id"]
+        recorded = self.store.load_ledger().orders[0]
+        self.assertEqual(recorded.reference_close, LAST.close)
+        self.assertEqual(recorded.sent_at, self.broker.now)
+
+        # The next session (2025-12-09) opens at its close in this synthetic series.
+        extended = gld_csv(242)
+        session_open = parse_gld_csv(extended, EquityConfig())[-1].open
+        fill_price = session_open + Decimal("0.10")
+        self.broker.fill(client_order_id, fill_price)
+        opened = self.broker.next_open
+        self.broker.orders[client_order_id] = replace(
+            self.broker.orders[client_order_id], submitted_at=self.broker.now,
+            filled_at=opened + timedelta(seconds=2))
+        _reconciled(self.broker, self.store, engage_on_mismatch=True)
+
+        with tempfile.TemporaryDirectory() as logs:
+            report = paper_report(self.store, extended, "GLD.csv", Path(logs))
+        row = report["orders"][0]
+        self.assertEqual(row["outcome"], "FILLED")
+        self.assertEqual(Decimal(row["reference"]["open"]), session_open)
+        self.assertEqual(Decimal(row["reference"]["simulated"]),
+                         session_open + EquityConfig().slippage_per_share)
+        self.assertGreater(Decimal(row["slippage_bps"]["open"]), 0)
+        self.assertEqual(Decimal(row["cost_vs_simulation"]),
+                         (Decimal("0.09") * plan["order"]["qty"]).quantize(Decimal("0.01")))
+        self.assertEqual(Decimal(row["latency_s"]["open_to_fill"]), Decimal("2.000"))
+        self.assertEqual(report["summary"]["fill_rate_pct"], "100.00")
+        self.assertEqual(report["runs"]["total"], 0)
+
+        # Without the session's bar yet, the open-based comparison waits for the next import.
+        waiting = paper_report(self.store, SOURCE, "GLD.csv", Path(self.store.directory))
+        self.assertEqual(waiting["summary"]["orders_awaiting_open_price"], 1)
+        self.assertEqual(set(waiting["orders"][0]["slippage_bps"]), {"plan"})
+
+    def test_schema_1_ledger_without_execution_fields_still_loads(self):
+        self.store.directory.mkdir(parents=True, exist_ok=True)
+        self.store.ledger_path.write_text(json.dumps({
+            "schema_version": 1, "peak_equity": "100000", "drawdown_halt": None,
+            "orders": [{"client_order_id": "tn-gld-20251209-buy-x", "plan_id": "p",
+                        "session": "2025-12-09", "side": "buy", "qty": 1,
+                        "limit_price": "300.00", "status": "filled", "filled_qty": 1,
+                        "filled_avg_price": "299.50", "broker_order_id": "b1"}]}),
+            encoding="utf-8")
+        ledger = self.store.load_ledger()
+        self.assertIsNone(ledger.orders[0].filled_at)
+        self.store.save_ledger(ledger)
+        saved = json.loads(self.store.ledger_path.read_text(encoding="utf-8"))
+        self.assertEqual(saved["schema_version"], 2)
+        self.assertEqual(self.store.load_ledger(), ledger)
 
     def test_tampered_plan_is_refused(self):
         plan = self.plan()

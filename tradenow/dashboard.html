@@ -425,6 +425,12 @@
         </article>
 
         <article class="card">
+          <div class="card-head"><div><h2>Execution quality</h2><p class="sub" id="execSub">Fills against the plan's close, the session open, and the backtest's simulated fill</p></div></div>
+          <dl class="kv" id="execList"></dl>
+          <p class="card-foot">Slippage is in basis points; positive is a cost. Per-order detail: <code>python -m tradenow paper-report</code></p>
+        </article>
+
+        <article class="card">
           <div class="card-head"><div><h2>Daily routine</h2><p class="sub">Run in a terminal after Tiingo publishes the close</p></div></div>
           <ol class="steps">
             <li>Import the latest close, with today's date as the end
@@ -921,6 +927,31 @@
         {label: 'Status', value: o => badge(humanize(o.status), o.status === 'filled' ? 'good' : ['rejected', 'not_found'].includes(o.status) ? 'crit' : ['canceled', 'expired'].includes(o.status) ? '' : 'warn')},
         {label: 'Client order ID', value: o => o.client_order_id, cls: () => 'code'},
       ], [...status.recent_orders].reverse(), 'No paper orders yet.');
+      renderExecution(payload.execution);
+    }
+
+    function renderExecution(execution) {
+      const list = $('execList');
+      if (!execution || execution.error) {
+        $('execSub').textContent = execution ? execution.error : 'Not available from this server';
+        list.replaceChildren();
+        return;
+      }
+      const s = execution.summary, runs = execution.runs;
+      const bps = value => value === null || value === undefined ? '—' : `${Number(value).toFixed(2)} bps`;
+      const rate = value => value === null || value === undefined ? '—' : pct(value);
+      $('execSub').textContent = `Session opens from Tiingo through ${fmtDay(execution.data_last_date)}`;
+      const rows = [
+        ['Orders', `${count(s.orders)} · fill rate ${rate(s.fill_rate_pct)} · rejected ${rate(s.rejection_rate_pct)}`],
+        ['Slippage vs plan close', bps(s.mean_slippage_bps.plan)],
+        ['Slippage vs session open', bps(s.mean_slippage_bps.open)],
+        ['Slippage vs backtest fill', `${bps(s.mean_slippage_bps.simulated)}${s.total_cost_vs_simulation === null ? '' : ` · ${money(s.total_cost_vs_simulation)} total`}`],
+        ['Open to fill', s.mean_open_to_fill_s === null ? '—' : `${Number(s.mean_open_to_fill_s).toFixed(1)} s average`],
+        ['Buy limits below the open', count(s.limit_below_open)],
+        ['Runs logged', `${count(runs.total)} · ${count(runs.reconciliation_failures)} reconciliation failures${runs.last_run_at ? ` · last ${fmtStamp(runs.last_run_at)}` : ''}`],
+      ];
+      if (s.orders_awaiting_open_price) rows.push(['Awaiting open price', `${count(s.orders_awaiting_open_price)} filled order(s); import the next close`]);
+      list.replaceChildren(...rows.flatMap(([k, v]) => [h('dt', {text: k}), h('dd', {text: v})]));
     }
 
     function renderPlan(plan, clock) {

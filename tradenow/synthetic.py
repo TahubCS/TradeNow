@@ -49,7 +49,7 @@ def bars_to_csv(bars: list[Bar]) -> str:
 
 def validate_synthetic_bars(bars: list[Bar]) -> None:
     """Check assumptions of this weekday-only fictional feed, not real markets."""
-    for previous, current in zip(bars, bars[1:]):
+    for previous, current in zip(bars, bars[1:], strict=False):
         expected = previous.date + timedelta(days=1)
         while expected.weekday() >= 5:
             expected += timedelta(days=1)

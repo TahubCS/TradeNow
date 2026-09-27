@@ -92,6 +92,18 @@ and beat the 50% buy-and-hold benchmark. SMA warmup occurs inside each test,
 while buy-and-hold enters at its first open. These windows do not constitute new
 independent evidence about the already viewed final holdout.
 
+## Implemented Paper Execution Evaluation
+
+`python -m tradenow paper-report` covers Layer 6 for GLD paper orders without
+contacting Alpaca. It compares each fill with the plan's reference close, the
+session's actual open, and the backtest's simulated fill (open ± slippage per
+share). It reports fill rate, rejection rate (rejected, or never received by
+Alpaca), partial fills, buy limits that fell below the open, time from the
+open to the fill, and total cost against the simulation. From the run log it
+counts reconciliation failures and repeated submit attempts. Paper fills are
+simulated by Alpaca, so these numbers test the plumbing and the backtest's fill
+assumption, not live market impact.
+
 ## Experiment Record
 
 Each experiment should store:

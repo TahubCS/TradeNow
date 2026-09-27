@@ -2,9 +2,9 @@ import json
 import unittest
 from unittest.mock import patch
 
-from tradenow.web import app
-from tradenow.synthetic import bars_to_csv, generate_bars
 from tests.test_gld_research import sample_gld_csv
+from tradenow.synthetic import bars_to_csv, generate_bars
+from tradenow.web import app
 
 
 async def request(path: str, query: str = "", method: str = "GET", body: bytes = b"",

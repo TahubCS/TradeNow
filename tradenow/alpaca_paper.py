@@ -15,6 +15,9 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
+from .logs import register_secret
+from .settings import PROJECT_ROOT
+
 
 PAPER_ENDPOINT = "https://paper-api.alpaca.markets"
 DATA_ENDPOINT = "https://data.alpaca.markets"
@@ -25,6 +28,7 @@ ENV_NAMES = ("ALPACA_PAPER_ENDPOINT", "ALPACA_PAPER_KEY_ID",
              "ALPACA_PAPER_SECRET_KEY")
 MAX_RESPONSE_BYTES = 1_000_000
 MAX_ORDER_SHARES = 10_000
+FRACTION_BEYOND_MICROS = re.compile(r"(\.\d{6})\d+")
 CLIENT_ORDER_ID = re.compile(r"tn-gld-[a-z0-9-]{1,48}")
 # Statuses after which Alpaca will not fill an order further.
 FINAL_ORDER_STATUSES = frozenset({"filled", "canceled", "expired", "rejected", "replaced"})
@@ -79,6 +83,8 @@ class BrokerOrder:
     filled_qty: int
     filled_avg_price: Decimal | None
     status: str
+    submitted_at: datetime | None = None
+    filled_at: datetime | None = None
 
     @property
     def is_final(self) -> bool:
@@ -134,7 +140,7 @@ def load_paper_credentials(env_file: Path | None = None) -> PaperCredentials:
     """Read only the three paper variables; never expose their values in errors."""
     values = {name: os.environ.get(name, "").strip() for name in ENV_NAMES}
     from_file: set[str] = set()
-    path = env_file or Path(__file__).resolve().parent.parent / ".env.local"
+    path = env_file or PROJECT_ROOT / ".env.local"
     if path.exists():
         for line in path.read_text(encoding="utf-8-sig").splitlines():
             stripped = line.strip()
@@ -155,6 +161,7 @@ def load_paper_credentials(env_file: Path | None = None) -> PaperCredentials:
     for name in ENV_NAMES[1:]:
         if not values[name] or any(char.isspace() for char in values[name]):
             raise ValueError(f"{name} is missing or malformed")
+        register_secret(values[name])
     return PaperCredentials(PAPER_ENDPOINT, values[ENV_NAMES[1]], values[ENV_NAMES[2]])
 
 
@@ -211,13 +218,19 @@ def _whole_shares(value: object, name: str) -> int:
 def _timestamp(value: object, name: str) -> datetime:
     if not isinstance(value, str):
         raise AlpacaError(f"Alpaca returned an invalid {name}")
+    # Alpaca may send nanoseconds; Python keeps at most microseconds.
+    trimmed = FRACTION_BEYOND_MICROS.sub(r"\1", value)
     try:
-        parsed = datetime.fromisoformat(value)
+        parsed = datetime.fromisoformat(trimmed)
     except ValueError:
         raise AlpacaError(f"Alpaca returned an invalid {name}") from None
     if parsed.tzinfo is None:
         raise AlpacaError(f"Alpaca returned a timestamp without an offset in {name}")
     return parsed
+
+
+def _optional_timestamp(value: object, name: str) -> datetime | None:
+    return None if value is None else _timestamp(value, name)
 
 
 def _object(value: object, what: str) -> dict:
@@ -263,7 +276,10 @@ def parse_order(raw: object) -> BrokerOrder:
                         filled_qty=_whole_shares(item.get("filled_qty"), "filled_qty"),
                         filled_avg_price=(None if price is None
                                           else _decimal(price, "filled_avg_price")),
-                        status=_text(item, "status"))
+                        status=_text(item, "status"),
+                        submitted_at=_optional_timestamp(item.get("submitted_at"),
+                                                         "submitted_at"),
+                        filled_at=_optional_timestamp(item.get("filled_at"), "filled_at"))
     if not 0 <= order.filled_qty <= order.qty:
         raise AlpacaError("Alpaca returned an impossible filled quantity")
     return order

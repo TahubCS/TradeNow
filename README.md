@@ -22,6 +22,35 @@ python -m tradenow
 python -m unittest discover -s tests -v
 ```
 
+### Development checks
+
+The linter and type checker are pinned in the `dev` extra. CI
+(`.github/workflows/ci.yml`) runs the same three checks on Ubuntu and Windows
+for every push and pull request:
+
+```powershell
+python -m pip install -e ".[dev,web]"
+ruff check tradenow tests
+mypy
+python -m unittest discover -s tests -v
+```
+
+### Settings, logs, and the run log
+
+All private state lives under one data directory, `data/private/` by default:
+Tiingo imports in `tiingo/`, the paper ledger and plans in `alpaca/`, and logs
+in `logs/`. Set `TRADENOW_DATA_DIR` to move all of it together; a relative
+path is resolved against the project root. `TRADENOW_MODE` may only be
+`paper`, and any other value stops every command before it runs.
+
+Every command appends exactly one line to `logs/runs.jsonl`: a run ID, the
+command, start and finish times, its outcome (`OK`, `BLOCKED` with the refusal
+code, `ERROR`, `USAGE`, or `CRASH`), and identifying fields such as the plan ID,
+client order ID, or imported data hash. Detailed log records go to
+`logs/tradenow.jsonl` (rotated at 5 MB), and a one-line summary is printed to
+stderr, so stdout still carries only each command's JSON result. Tiingo and
+Alpaca credentials are redacted from everything written.
+
 ## Import GLD daily history
 
 Place `TIINGO_API_KEY=your_key` in the project-root `.env.local`, or set the
@@ -38,8 +67,14 @@ python -m tradenow tiingo-import --start 2004-11-18 --end 2026-09-25
 This command makes at most two Tiingo EOD requests for `GLD` and never retries
 automatically. It checks ticker coverage, validates daily bars, and saves raw
 JSON, a CSV containing raw and adjusted prices, and a source manifest under
-`data/private/tiingo/`. Repeating the same date range stops before any API
-request. The key is sent in an authorization header and never written to the
+`data/private/tiingo/`. Repeating a date range that is already complete stops
+before any API request. If an earlier import of the same range ends before the
+requested end date (for example, it ran before Tiingo published that day's
+close), running it again fetches the range once more. It replaces the files only
+when Tiingo now has a newer bar and every earlier raw bar is unchanged. The
+earlier files move to `data/private/tiingo/superseded/`. With no newer bar yet,
+the result is `UNCHANGED` and nothing is written. Revised history is refused,
+and the earlier import is kept. The key is sent in an authorization header and never written to the
 data files. The import command does not run a backtest or contact a broker.
 
 Replay the newest private import without another Tiingo request:
@@ -96,6 +131,7 @@ python -m tradenow tiingo-import --start 2004-11-18 --end 2026-09-28
 python -m tradenow paper-plan
 python -m tradenow paper-submit --approve <plan_id>   # only if the plan has an order
 python -m tradenow paper-status                       # any time; read-only
+python -m tradenow paper-report                       # any time; local files only
 ```
 
 - **`paper-plan`** reconciles first, selects the strategy on validation data
@@ -138,9 +174,20 @@ larger. To start a fresh paper run, reset the Alpaca paper account and delete
 `data/private/alpaca/`.
 
 If `tiingo-import` runs before Tiingo publishes the latest close, `paper-plan`
-reports `TIINGO_STALE`. Delete that import's three files under
-`data/private/tiingo/` and import again later, because the import refuses to
-repeat a date range.
+reports `TIINGO_STALE`. Run the same `tiingo-import` command again later; it
+refreshes the incomplete import (see above).
+
+**`paper-report`** measures execution quality offline, without contacting
+Alpaca. Each order records the plan's reference close, when it was sent, and
+Alpaca's submission and fill times. Each fill is compared with three prices:
+the plan's close, the session's actual open from the Tiingo history, and the
+backtest's simulated fill (that open plus or minus its per-share slippage).
+Slippage is reported in basis points, where positive is a cost. The report
+also covers fill and rejection rates, partial fills, buy limits that were below
+the open, time from the open to the fill, dollar cost against the simulation,
+and run-log health: outcomes, block codes, reconciliation failures, and
+repeated submits. A fill's open-based comparisons appear after the next Tiingo
+import includes its session. The dashboard's paper view shows the same summary.
 
 ## Local dashboard
 

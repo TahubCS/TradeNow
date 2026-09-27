@@ -14,23 +14,35 @@ from dataclasses import asdict, dataclass, replace
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
-from .alpaca_paper import (Account, AlpacaError, BrokerOrder, Clock, DailyBar,
-                           PaperOrder, Position)
+from .alpaca_paper import Account, AlpacaError, BrokerOrder, Clock, DailyBar, PaperOrder, Position
 from .equity import EquityConfig, simulate_equity
+from .execution_quality import SessionReference, order_quality, summarize_quality, summarize_runs
 from .gld_research import parse_gld_csv
+from .logs import read_runs
 from .offline import CANDIDATES, evaluate_candidates
-from .paper_rules import (SUBMITTING, LedgerOrder, Reconciliation, apply_broker_order,
-                          cross_check_closes, measure_drawdown, plan_order, reconcile,
-                          sma_signal)
+from .paper_rules import (
+    SUBMITTING,
+    LedgerOrder,
+    Reconciliation,
+    apply_broker_order,
+    cross_check_closes,
+    measure_drawdown,
+    plan_order,
+    reconcile,
+    sma_signal,
+)
+from .settings import SETTINGS
 
 
-STATE_DIR = Path(__file__).resolve().parent.parent / "data" / "private" / "alpaca"
+STATE_DIR = SETTINGS.alpaca_dir
 # Alpaca's free data plan cannot query the most recent 15 minutes of SIP data.
 DATA_LAG = timedelta(minutes=20)
 CROSS_CHECK_CALENDAR_DAYS = 21
 PLAN_ID = re.compile(r"[0-9a-f]{16}")
+# Version 2 adds execution-quality fields to each order; version 1 still loads.
+LEDGER_SCHEMA = 2
 
 
 class PaperBlocked(ValueError):
@@ -70,7 +82,7 @@ class PaperLedger:
 
 # ---------------------------------------------------------------- persistence
 
-def _jsonable(value: object) -> object:
+def _jsonable(value: Any) -> Any:
     if isinstance(value, dict):
         return {key: _jsonable(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
@@ -80,9 +92,7 @@ def _jsonable(value: object) -> object:
     return value
 
 
-def _stored_decimal(value: object, name: str, optional: bool = False) -> Decimal | None:
-    if value is None and optional:
-        return None
+def _stored_decimal(value: object, name: str) -> Decimal:
     try:
         number = Decimal(value) if isinstance(value, str) else None
     except InvalidOperation:
@@ -90,6 +100,22 @@ def _stored_decimal(value: object, name: str, optional: bool = False) -> Decimal
     if number is None or not number.is_finite():
         raise ValueError(f"Paper ledger has an invalid {name}")
     return number
+
+
+def _optional_decimal(value: object, name: str) -> Decimal | None:
+    return None if value is None else _stored_decimal(value, name)
+
+
+def _optional_time(value: object, name: str) -> datetime | None:
+    if value is None:
+        return None
+    try:
+        stamp = datetime.fromisoformat(value) if isinstance(value, str) else None
+    except ValueError:
+        stamp = None
+    if stamp is None or stamp.tzinfo is None:
+        raise ValueError(f"Paper ledger has an invalid {name}")
+    return stamp
 
 
 def _order_from_json(item: object) -> LedgerOrder:
@@ -100,10 +126,15 @@ def _order_from_json(item: object) -> LedgerOrder:
             client_order_id=str(item["client_order_id"]), plan_id=str(item["plan_id"]),
             session=date.fromisoformat(item["session"]), side=str(item["side"]),
             qty=item["qty"], status=str(item["status"]), filled_qty=item["filled_qty"],
-            limit_price=_stored_decimal(item["limit_price"], "limit_price", True),
-            filled_avg_price=_stored_decimal(item["filled_avg_price"],
-                                             "filled_avg_price", True),
-            broker_order_id=item["broker_order_id"])
+            limit_price=_optional_decimal(item["limit_price"], "limit_price"),
+            filled_avg_price=_optional_decimal(item["filled_avg_price"],
+                                               "filled_avg_price"),
+            broker_order_id=item["broker_order_id"],
+            # Absent from schema 1 ledgers, which predate execution-quality capture.
+            reference_close=_optional_decimal(item.get("reference_close"), "reference_close"),
+            sent_at=_optional_time(item.get("sent_at"), "sent_at"),
+            submitted_at=_optional_time(item.get("submitted_at"), "submitted_at"),
+            filled_at=_optional_time(item.get("filled_at"), "filled_at"))
     except (KeyError, TypeError, ValueError):
         raise ValueError("Paper ledger has a malformed order") from None
     if (order.side not in ("buy", "sell") or type(order.qty) is not int
@@ -134,7 +165,7 @@ class PaperStore:
             raw = json.loads(self.ledger_path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             raise ValueError("Paper ledger is unreadable") from None
-        if not isinstance(raw, dict) or raw.get("schema_version") != 1:
+        if not isinstance(raw, dict) or raw.get("schema_version") not in (1, LEDGER_SCHEMA):
             raise ValueError("Paper ledger has an unsupported format")
         halt = raw.get("drawdown_halt")
         if halt is not None:
@@ -150,12 +181,12 @@ class PaperStore:
         parsed = tuple(_order_from_json(item) for item in orders)
         if len({order.client_order_id for order in parsed}) != len(parsed):
             raise ValueError("Paper ledger repeats a client order ID")
-        return PaperLedger(_stored_decimal(raw.get("peak_equity"), "peak_equity", True),
+        return PaperLedger(_optional_decimal(raw.get("peak_equity"), "peak_equity"),
                            halt, parsed)
 
     def save_ledger(self, ledger: PaperLedger) -> None:
         self._write(self.ledger_path, {
-            "schema_version": 1, "peak_equity": ledger.peak_equity,
+            "schema_version": LEDGER_SCHEMA, "peak_equity": ledger.peak_equity,
             "drawdown_halt": None if ledger.drawdown_halt is None else asdict(ledger.drawdown_halt),
             "orders": [asdict(order) for order in ledger.orders]})
 
@@ -277,15 +308,17 @@ def _send(client: BrokerClient, store: PaperStore, ledger: PaperLedger,
         outcome = "SUBMITTED"
     except AlpacaError as error:
         definitive = error.status is not None and 400 <= error.status < 500
+        found: BrokerOrder | None
         try:
-            broker = client.order_by_client_id(record.client_order_id)
+            found = client.order_by_client_id(record.client_order_id)
         except AlpacaError:
-            broker, definitive = None, False
-        updated = apply_broker_order(record, broker, definitive=definitive)
+            found, definitive = None, False
+        updated = apply_broker_order(record, found, definitive=definitive)
         store.save_ledger(replace(ledger, orders=ledger.orders[:-1] + (updated,)))
-        if broker is None:
+        if found is None:
             raise PaperBlocked("SUBMIT_FAILED", f"{error}; ledger status {updated.status}"
                                " (the next command resolves it by client order ID)") from None
+        broker = found
         outcome = "SUBMITTED_AFTER_ERROR"
     updated = apply_broker_order(record, broker, definitive=True)
     store.save_ledger(replace(ledger, orders=ledger.orders[:-1] + (updated,)))
@@ -342,7 +375,8 @@ def paper_plan(client: BrokerClient, store: PaperStore, source_bytes: bytes,
         raise PaperBlocked("DATA_CHECK_FAILED", "; ".join(problems))
 
     chosen = next((item for item in CANDIDATES if item[0] == selected), None)
-    signal = None if chosen is None else sma_signal(bars, chosen[1], chosen[2])
+    windows = None if chosen is None else (chosen[1], chosen[2])
+    signal = None if windows is None else sma_signal(bars, *windows)
     drawdown = measure_drawdown(ledger.peak_equity, account.equity,
                                 config.max_drawdown_fraction)
     halt = ledger.drawdown_halt
@@ -365,8 +399,8 @@ def paper_plan(client: BrokerClient, store: PaperStore, source_bytes: bytes,
                  "last_date": last.date.isoformat(), "reference_close": str(last.close),
                  "alpaca_sip_sessions_compared": len(alpaca_bars)},
         "selected_hypothesis": selected,
-        "signal": None if signal is None else {
-            "fast_window": chosen[1], "slow_window": chosen[2],
+        "signal": None if signal is None or windows is None else {
+            "fast_window": windows[0], "slow_window": windows[1],
             "fast_sma": str(signal.fast_sma), "slow_sma": str(signal.slow_sma),
             "strategy_target": signal.strategy_target},
         "account": {"cash": str(account.cash), "equity": str(account.equity)},
@@ -420,10 +454,13 @@ def paper_submit(client: BrokerClient, store: PaperStore, plan_id: str) -> dict:
     if order.side == "buy":
         if ledger.drawdown_halt is not None:
             raise PaperBlocked("DRAWDOWN_HALT", "new entries are blocked")
+        assert limit is not None  # PaperOrder requires a limit price on buys
         if account.cash < order.qty * limit + EquityConfig().commission_per_order:
             raise PaperBlocked("INSUFFICIENT_CASH", "cash no longer covers the planned buy")
     record = LedgerOrder(client_order_id, plan_id, session, order.side, order.qty,
-                         limit, SUBMITTING)
+                         limit, SUBMITTING,
+                         reference_close=Decimal(plan["data"]["reference_close"]),
+                         sent_at=clock.timestamp)
     return _jsonable(_send(client, store, ledger, record, order))
 
 
@@ -445,7 +482,8 @@ def paper_halt(client: BrokerClient, store: PaperStore, reason: str,
                 order = PaperOrder(client_order_id, "sell", shares)
                 record = LedgerOrder(client_order_id, "kill-switch", clock.next_open.date()
                                      if not clock.is_open else clock.timestamp.date(),
-                                     "sell", shares, None, SUBMITTING)
+                                     "sell", shares, None, SUBMITTING,
+                                     sent_at=clock.timestamp)
                 result["flatten"] = _send(client, store, ledger, record, order)
             else:
                 result["flatten"] = {"result": "NO_GLD_POSITION"}
@@ -467,3 +505,34 @@ def paper_resume(client: BrokerClient, store: PaperStore) -> dict:
     return _jsonable({"kill_switch": "CLEARED", "gld_shares": result.broker_shares,
                       "drawdown_halt": None if ledger.drawdown_halt is None
                       else asdict(ledger.drawdown_halt)})
+
+
+def paper_report(store: PaperStore, source_bytes: bytes, source_name: str,
+                 log_dir: Path = SETTINGS.log_dir,
+                 config: EquityConfig = EquityConfig()) -> dict:
+    """Offline execution-quality report; reads local files only, never Alpaca.
+
+    An order's session open comes from the Tiingo history, so a fill from today
+    shows its open-based comparisons after the next import.
+    """
+    ledger = store.load_ledger()
+    bars = parse_gld_csv(source_bytes, config)
+    opens = {bar.date: bar.open for bar in bars}
+    rows = []
+    for order in ledger.orders:
+        open_time = None
+        if PLAN_ID.fullmatch(order.plan_id):
+            try:
+                open_time = datetime.fromisoformat(store.load_plan(order.plan_id)["session_open"])
+            except (PaperBlocked, OSError, ValueError, KeyError, TypeError):
+                open_time = None
+        session = SessionReference(opens.get(order.session), open_time)
+        rows.append(order_quality(order, session, config.slippage_per_share))
+    return _jsonable({
+        "mode": "alpaca_paper_execution_report",
+        "data": {"source_name": source_name,
+                 "sha256": hashlib.sha256(source_bytes).hexdigest(),
+                 "last_date": bars[-1].date},
+        "summary": summarize_quality(rows), "runs": summarize_runs(read_runs(log_dir)),
+        "orders": rows})
+

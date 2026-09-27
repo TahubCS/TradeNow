@@ -43,7 +43,7 @@ def parse_gld_csv(source_bytes: bytes, config: EquityConfig) -> list[EquityBar]:
             dividend = Decimal(row["div_cash"])
             split = Decimal(row["split_factor"])
             bar = EquityBar(date.fromisoformat(row["date"]), row["symbol"],
-                            *raw, volume)
+                            raw[0], raw[1], raw[2], raw[3], volume)
         except (TypeError, ValueError, InvalidOperation):
             raise ValueError(f"Invalid GLD CSV row {row_number}") from None
         if (any(not value.is_finite() for value in adjusted + [dividend, split])
@@ -130,9 +130,9 @@ def run_gld_csv(source_bytes: bytes, filename: str = "GLD.csv",
                        "drawdown threshold checks closing equity and requests an exit at the next tradable open; it does not cap losses"]}
 
 
-def latest_imported_gld() -> tuple[bytes, str]:
+def latest_imported_gld(directory: Path = PRIVATE_DIR) -> tuple[bytes, str]:
     """Load the newest private import only if its manifest matches the CSV."""
-    manifests = [path for path in PRIVATE_DIR.glob("GLD-*.manifest.json")
+    manifests = [path for path in directory.glob("GLD-*.manifest.json")
                  if re.fullmatch(r"GLD-\d{8}-\d{8}\.manifest\.json", path.name)]
     if not manifests:
         raise ValueError("No private GLD import found; run tiingo-import first")

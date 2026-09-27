@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal, ROUND_DOWN
+from decimal import ROUND_DOWN, Decimal
 
 
 @dataclass(frozen=True)
@@ -118,6 +118,7 @@ def simulate_equity(bars: list[EquityBar], config: EquityConfig = EquityConfig()
                 price = bar.open - config.slippage_per_share
                 if price <= 0:
                     raise ValueError("Simulated GLD sale price must be positive")
+                assert entry_price is not None  # a sell only follows a filled buy
                 quantity = shares
                 cash += price * quantity - config.commission_per_order
                 gross_pnl = (price - entry_price) * quantity
@@ -136,6 +137,7 @@ def simulate_equity(bars: list[EquityBar], config: EquityConfig = EquityConfig()
                               "side": action, "symbol": "GLD",
                               "price": str(price), "shares": quantity})
                 if halted:
+                    assert drawdown_halt is not None
                     drawdown_halt["exit_date"] = day
                     drawdown_halt["exit_price"] = str(price)
 

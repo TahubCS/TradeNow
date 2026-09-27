@@ -171,8 +171,10 @@ def simulate(bars: list[Bar], config: Config = Config()) -> dict:
                               "approved": False, "reason": "MAINTENANCE_MARGIN"})
 
         if index - segment_start >= config.slow_window - 1:
-            fast = sum(item.close for item in bars[index + 1 - config.fast_window:index + 1])
-            slow = sum(item.close for item in bars[index + 1 - config.slow_window:index + 1])
+            fast = sum((item.close for item in bars[index + 1 - config.fast_window:index + 1]),
+                       Decimal(0))
+            slow = sum((item.close for item in bars[index + 1 - config.slow_window:index + 1]),
+                       Decimal(0))
             fast_average = fast / config.fast_window
             slow_average = slow / config.slow_window
             strategy_target = int(fast_average > slow_average)

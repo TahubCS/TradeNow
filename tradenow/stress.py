@@ -2,11 +2,11 @@
 
 import hashlib
 import json
+from collections.abc import Callable
 from dataclasses import replace
 from decimal import Decimal
 from io import StringIO
 from pathlib import Path
-from typing import Callable
 
 from .execution import ApprovedOrder, SimulatedBroker
 from .market_data import parse_bars

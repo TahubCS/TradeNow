@@ -2,15 +2,23 @@ import io
 import json
 import tempfile
 import unittest
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
 from urllib.error import HTTPError
 
-from tradenow.alpaca_paper import (PAPER_ENDPOINT, AlpacaError, PaperClient,
-                                   PaperCredentials, PaperOrder, load_paper_credentials,
-                                   parse_account, parse_daily_bars, parse_order)
+from tradenow.alpaca_paper import (
+    PAPER_ENDPOINT,
+    AlpacaError,
+    PaperClient,
+    PaperCredentials,
+    PaperOrder,
+    load_paper_credentials,
+    parse_account,
+    parse_daily_bars,
+    parse_order,
+)
 
 
 ACCOUNT = {"account_number": "PA3EXAMPLE", "status": "ACTIVE", "currency": "USD",
@@ -132,6 +140,17 @@ class ParserTests(unittest.TestCase):
             parse_order({**ORDER, "qty": "1.5"})
         with self.assertRaisesRegex(AlpacaError, "impossible"):
             parse_order({**ORDER, "filled_qty": "11"})
+
+    def test_order_keeps_submission_and_fill_times(self):
+        self.assertIsNone(parse_order(ORDER).filled_at)
+        order = parse_order({**ORDER, "submitted_at": "2025-12-09T01:00:00.123456Z",
+                             "filled_at": "2025-12-09T14:30:01.5Z"})
+        self.assertEqual(order.submitted_at.tzinfo.utcoffset(None), timedelta(0))
+        self.assertEqual((order.filled_at - order.submitted_at).total_seconds(), 48601.376544)
+        nanos = parse_order({**ORDER, "filled_at": "2025-12-09T14:30:01.123456789Z"})
+        self.assertEqual(nanos.filled_at.microsecond, 123456)
+        with self.assertRaisesRegex(AlpacaError, "without an offset"):
+            parse_order({**ORDER, "filled_at": "2025-12-09T14:30:01"})
 
     def test_daily_bars_use_new_york_session_dates(self):
         bars = parse_daily_bars({"bars": [
