@@ -101,6 +101,11 @@ volatility, Sharpe, Sortino, drawdown, Calmar, exposure, and trade statistics,
 and each distinct run is added once to `data/private/experiments.jsonl`, so
 every strategy ever tried is counted.
 
+`python -m tradenow features --date YYYY-MM-DD` prints the versioned feature
+snapshot for any day (returns, momentum, moving averages, RSI, ATR,
+volatility, volume z-score, Donchian channels, drawdown). Each value uses only
+data up to that day's close; a test proves no future bar is ever used.
+
 Use `python -m tradenow gld --data path/to/GLD.csv` for another local Tiingo-format
 CSV. GLD research uses the same fixed candidates and chronological
 development/validation/holdout selection as the MGC workflow, with cash-funded

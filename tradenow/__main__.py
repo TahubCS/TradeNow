@@ -10,8 +10,16 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from .alpaca_paper import PaperClient, load_paper_credentials
+from .equity import EquityConfig
 from .experiments import record_experiment
-from .gld_research import MAX_GLD_CSV_BYTES, latest_imported_gld, run_gld_csv, save_gld_report
+from .features import snapshot
+from .gld_research import (
+    MAX_GLD_CSV_BYTES,
+    latest_imported_gld,
+    parse_gld_csv,
+    run_gld_csv,
+    save_gld_report,
+)
 from .logs import Run, configure_logging, recorded_run
 from .market_data import load_bars
 from .notify import desktop_notify
@@ -282,6 +290,22 @@ def replay_main(argv: list[str], run: Run) -> int:
     return 0
 
 
+def features_main(argv: list[str], run: Run) -> int:
+    """Print the versioned, point-in-time feature snapshot for one date."""
+    parser = argparse.ArgumentParser(prog="tradenow features",
+                                     description="GLD feature snapshot for one date")
+    parser.add_argument("--date", required=True, type=date.fromisoformat)
+    parser.add_argument("--data", type=Path, help="GLD CSV; defaults to latest Tiingo import")
+    args = parser.parse_args(argv)
+    try:
+        source_bytes, _ = _gld_source(args.data)
+        result = snapshot(parse_gld_csv(source_bytes, EquityConfig()), args.date)
+    except (OSError, ValueError, InvalidOperation) as error:
+        return _fail(run, error)
+    _emit(run, result)
+    return 0
+
+
 def notify_test_main(argv: list[str], run: Run) -> int:
     """Show one test notification and report exactly what Windows did."""
     argparse.ArgumentParser(prog="tradenow notify-test",
@@ -292,7 +316,8 @@ def notify_test_main(argv: list[str], run: Run) -> int:
 
 
 COMMANDS = {"offline": offline_main, "stress": stress_main, "web": web_main,
-            "tiingo-import": tiingo_main, "gld": gld_main, "notify-test": notify_test_main}
+            "tiingo-import": tiingo_main, "gld": gld_main, "notify-test": notify_test_main,
+            "features": features_main}
 
 
 def main(argv: list[str] | None = None) -> int:
