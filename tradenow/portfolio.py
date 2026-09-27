@@ -75,6 +75,10 @@ def _validate(universe: Universe, config: PortfolioConfig, start: int, end: int,
         raise ValueError("Universe symbols must be distinct and match its assets")
     if not 0 <= start < end - 1 < len(universe.dates):
         raise ValueError("A portfolio run needs at least two bars inside the calendar")
+    # Evaluations simulate the same data hundreds of times; its bars and rows
+    # are checked once. Holding the objects keeps the identity check sound.
+    if _VALIDATED and _VALIDATED[0] is universe and _VALIDATED[1] is rows:
+        return
     for symbol in symbols:
         bars = universe.bars(symbol)
         if [bar.date for bar in bars] != universe.dates:
@@ -86,6 +90,11 @@ def _validate(universe: Universe, config: PortfolioConfig, start: int, end: int,
                 raise ValueError(f"Invalid {symbol} bar on {bar.date}")
         if [row.date for row in rows[symbol]] != universe.dates:
             raise ValueError(f"{symbol} feature rows do not match the universe calendar")
+    _VALIDATED[:] = [universe, rows]
+
+
+# The last universe and rows whose bars passed validation (see _validate).
+_VALIDATED: list[object] = []
 
 
 def _checked_weights(weights: Mapping[str, Decimal],

@@ -239,6 +239,15 @@ class BenchmarkTests(unittest.TestCase):
 
 
 class BoundaryTests(unittest.TestCase):
+    def test_other_data_is_validated_after_a_valid_run(self):
+        universe = make_universe({"GLD": [10, 10, 10]})
+        simulate_portfolio(universe, lambda _views: {"GLD": Decimal(1)}, CASH)
+        bad = make_universe({"GLD": [10, 10, 10]})
+        bars = bad.assets["GLD"].bars
+        bars[1] = replace(bars[1], close=Decimal(0))
+        with self.assertRaisesRegex(ValueError, "Invalid GLD bar"):
+            simulate_portfolio(bad, lambda _views: {"GLD": Decimal(1)}, CASH)
+
     def test_rejects_invalid_weights(self):
         universe = make_universe({"GLD": [10, 10, 10], "SPY": [20, 20, 20]})
         for weights in ({"GLD": Decimal("0.6"), "SPY": Decimal("0.4000001")},
