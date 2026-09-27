@@ -152,6 +152,11 @@ def latest_imported_gld(directory: Path = PRIVATE_DIR) -> tuple[bytes, str]:
     return source_bytes, csv_path.name
 
 
+def _na(value: str | None, suffix: str = "") -> str:
+    """A metric that cannot be computed (no trades, no losses, no volatility) shows n/a."""
+    return "n/a" if value is None else f"{value}{suffix}"
+
+
 def _gate_markdown(gate: dict) -> list[str]:
     rows = [f"## Live-trading gate (ADR-008): **{gate['verdict']}**", "", gate["meaning"], "",
             "| Check | Result | Detail |", "| --- | --- | --- |"]
@@ -212,6 +217,20 @@ def render_gld_markdown(report: dict) -> str:
         item = evaluation["holdout"][key]
         rows.append(f"| {label} | {item['total_return_pct']}% | "
                     f"{item['annualized_return_pct']}% | {item['max_drawdown_pct']}% |")
+    rows.extend(["", "| Portfolio | Volatility | Sharpe | Sortino | Calmar | Exposure |",
+                 "| --- | ---: | ---: | ---: | ---: | ---: |"])
+    for label, key in (("Selected strategy", "strategy"),
+                       ("Buy and hold, 50% allocation", "buy_hold_50pct"),
+                       ("Buy and hold, 100% allocation", "buy_hold_100pct")):
+        metrics = evaluation["holdout"][key]["metrics"]
+        rows.append(f"| {label} | {_na(metrics['annualized_volatility_pct'], '%')} | "
+                    f"{_na(metrics['sharpe'])} | {_na(metrics['sortino'])} | "
+                    f"{_na(metrics['calmar'])} | {_na(metrics['exposure_pct'], '%')} |")
+    strategy_metrics = evaluation["holdout"]["strategy"]["metrics"]
+    rows.extend(["", f"Strategy trades: {strategy_metrics['closed_trades']} closed, hit rate "
+                 f"{_na(strategy_metrics['hit_rate_pct'], '%')}, profit factor "
+                 f"{_na(strategy_metrics['profit_factor'])}, average holding "
+                 f"{_na(strategy_metrics['average_holding_days'], ' days')}."])
     turnover = evaluation["holdout"]["strategy"]["gross_traded_notional_pct_of_starting_cash"]
     rows.extend(["", f"Strategy gross traded notional: {turnover}% of starting cash.",
                  "", "## Slippage sensitivity", "",

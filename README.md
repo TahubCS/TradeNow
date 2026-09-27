@@ -96,6 +96,11 @@ Replay the newest private import without another Tiingo request:
 python -m tradenow gld
 ```
 
+Each report compares the strategy with 50% and 100% buy-and-hold using return,
+volatility, Sharpe, Sortino, drawdown, Calmar, exposure, and trade statistics,
+and each distinct run is added once to `data/private/experiments.jsonl`, so
+every strategy ever tried is counted.
+
 Use `python -m tradenow gld --data path/to/GLD.csv` for another local Tiingo-format
 CSV. GLD research uses the same fixed candidates and chronological
 development/validation/holdout selection as the MGC workflow, with cash-funded

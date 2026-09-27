@@ -92,6 +92,25 @@ and beat the 50% buy-and-hold benchmark. SMA warmup occurs inside each test,
 while buy-and-hold enters at its first open. These windows do not constitute new
 independent evidence about the already viewed final holdout.
 
+## Implemented Portfolio Metrics and Experiment Log
+
+Every GLD report compares the selected strategy with 50% and 100% buy-and-hold
+on the same holdout. Each gets return, annualized return and volatility,
+Sharpe, Sortino, maximum drawdown, Calmar, and exposure. The strategy also
+gets closed trades, hit rate, profit factor, and average holding period
+(`tradenow/metrics.py`). Volatility-based ratios use daily close-to-close
+equity, 252 days a year, and a zero risk-free rate. A ratio that cannot be
+computed (no volatility, no losing trades) is reported as n/a, never as
+infinite.
+
+Each `python -m tradenow gld` run appends one record to
+`data/private/experiments.jsonl`, following the experiment record above: the
+candidates, the selected hypothesis, feature and strategy versions, the
+configuration, data and code hashes, the Git commit, results, and the gate
+verdict. The experiment ID is the report's run ID, a hash of its inputs, so
+repeating an experiment adds nothing and every distinct trial is counted once.
+Identical inputs produce byte-identical reports; a test enforces this.
+
 ## Implemented Paper Execution Evaluation
 
 `python -m tradenow paper-report` covers Layer 6 for GLD paper orders without

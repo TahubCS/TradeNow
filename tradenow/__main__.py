@@ -10,6 +10,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from .alpaca_paper import PaperClient, load_paper_credentials
+from .experiments import record_experiment
 from .gld_research import MAX_GLD_CSV_BYTES, latest_imported_gld, run_gld_csv, save_gld_report
 from .logs import Run, configure_logging, recorded_run
 from .market_data import load_bars
@@ -153,6 +154,7 @@ def gld_main(argv: list[str], run: Run) -> int:
             source = "tiingo_eod_import"
         report = run_gld_csv(source_bytes, filename, source=source)
         json_path, md_path = save_gld_report(report, args.output)
+        experiment = record_experiment(report)
     except (OSError, ValueError, InvalidOperation) as error:
         return _fail(run, error)
     _emit(run, {"mode": report["mode"], "run_id": report["run_id"],
@@ -164,6 +166,8 @@ def gld_main(argv: list[str], run: Run) -> int:
                       "rolling_summary": report["evaluation"]["rolling_pre_holdout"]["summary"],
                       "live_gate": {"verdict": report["live_gate"]["verdict"],
                                     "failing_checks": report["live_gate"]["failing_checks"]},
+                      "holdout_metrics": report["evaluation"]["holdout"]["strategy"]["metrics"],
+                      "experiment": experiment,
                       "slippage_sensitivity": report["evaluation"]["slippage_sensitivity"],
                       "report_file": str(json_path.resolve()),
                       "readable_report": str(md_path.resolve())})

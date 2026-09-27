@@ -4,6 +4,7 @@ from dataclasses import replace
 from decimal import ROUND_DOWN, Decimal
 
 from .equity import EquityBar, EquityConfig, simulate_equity
+from .metrics import equity_performance, performance
 from .offline import CANDIDATES
 
 
@@ -38,8 +39,10 @@ def _buy_and_hold(bars: list[EquityBar], config: EquityConfig,
     cash = config.starting_cash - shares * price - config.commission_per_order
     peak = config.starting_cash
     max_drawdown = Decimal(0)
+    curve = []
     for bar in bars:
         equity = cash + shares * bar.close
+        curve.append(equity)
         peak = max(peak, equity)
         max_drawdown = max(max_drawdown, (peak - equity) / peak)
     total_return = (equity / config.starting_cash - 1) * 100
@@ -47,7 +50,9 @@ def _buy_and_hold(bars: list[EquityBar], config: EquityConfig,
             "total_return_pct": _pct(total_return),
             "annualized_return_pct": _annualized_pct(config.starting_cash, equity,
                                                        (bars[-1].date - bars[0].date).days),
-            "max_drawdown_pct": _pct(max_drawdown * 100)}
+            "max_drawdown_pct": _pct(max_drawdown * 100),
+            "metrics": performance(config.starting_cash, curve, bars[0].date, bars[-1].date,
+                                   invested_days=len(curve))}
 
 
 def _turnover_pct(result: dict, starting_cash: Decimal) -> str:
@@ -151,7 +156,9 @@ def evaluate_gld(pre_holdout: list[EquityBar], holdout: list[EquityBar],
                                  config.starting_cash, strategy_equity, days),
                              "max_drawdown_pct": holdout_result["max_drawdown_pct"],
                              "gross_traded_notional_pct_of_starting_cash": _turnover_pct(
-                                 holdout_result, config.starting_cash)},
+                                 holdout_result, config.starting_cash),
+                             "metrics": equity_performance(holdout_result,
+                                                           config.starting_cash)},
                 "buy_hold_50pct": benchmark_50,
                 "buy_hold_100pct": benchmark_100,
                 "cash": {"total_return_pct": "0.000", "annualized_return_pct": "0.000",
@@ -168,5 +175,6 @@ def evaluate_gld(pre_holdout: list[EquityBar], holdout: list[EquityBar],
                       "Cash assumes zero interest. Benchmarks do not use the strategy drawdown halt.",
                       "Annualized returns use calendar days and a 365.25-day year.",
                       "Turnover is gross traded notional divided by starting cash.",
+                      "Volatility, Sharpe, and Sortino use daily close-to-close equity, 252 days a year, and a zero risk-free rate.",
                       "Rolling tests end before the final holdout and restart flat in each window.",
                       "Rolling strategies warm up inside each test; buy-and-hold enters at its first open."]}
