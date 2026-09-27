@@ -507,6 +507,47 @@ fund would beat.
   dataset in a new ADR. The candidates and thresholds above are not tuned
   and re-run.
 
+### Clarifications (recorded 2026-09-27, before any multi-asset result)
+
+Written while no multi-asset code had been run on real data. They settle
+details the rules above leave open; none loosens the gate.
+
+1. **Sizing at the fill-day open.** On a fill day, equity is valued at the
+   open. Target shares for a buy are floor(weight × equity ÷ (open +
+   slippage)). The 1% band compares values at the same open prices.
+   Real and paper orders must be sized before the open; that is an MA6
+   concern.
+2. **Not enough cash.** If the buys cost more than the cash left after the
+   sells, slippage included, every buy is shrunk by the same fraction and
+   then rounded down to whole shares.
+3. **Full exits.** A target of 0 always sells the whole position; the 1%
+   band does not apply. The drawdown halt also sells everything.
+4. **First signal day.** The first bar's close of any run or window is an
+   extra signal day for the strategy and both benchmarks, so all of them
+   start at the second bar's open. This applies to development,
+   validation, and test windows alike.
+5. **Benchmarks.** B1 and B2 do not use the 10% halt. B1's monthly
+   rebalance uses the same 1% band, whole shares, and costs. B2 buys at
+   the first signal and then holds without rebalancing.
+6. **Round trips (R3).** One round trip is one asset going from 0 shares to
+   held and back to 0. Trims and top-ups do not count, and a position still
+   open at the end of a window does not count. A trip's P&L is its net cash
+   flow; entry is its first buy and exit its final sell.
+7. **Blocked orders.** On a zero-volume day, or after a gap longer than
+   `max_order_gap_days` (7 calendar days, as in `equity.py`), that asset's
+   order does not fill. Its target persists and the order retries at each
+   next open until it fills or a newer signal replaces it. This applies to
+   rebalances and halt sales. A retry is evaluated like a first attempt at
+   that day's open: re-sized from that day's equity, with the 1% band
+   checked again.
+8. **Warmup.** An asset whose rule or 60-day volatility cannot be evaluated
+   yet is out. iv35 normalizes only across the assets that have a
+   volatility value.
+9. **Month-end** is the last trading day of each calendar month in the
+   aligned calendar.
+10. **Fresh start.** Every run or rolling window starts from cash, with no
+    halt carried over.
+
 ---
 
 ## ADR Template
