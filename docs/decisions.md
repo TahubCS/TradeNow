@@ -606,6 +606,83 @@ any work on it.
 
 ---
 
+## ADR-012 — Registered Machine-Learning Candidates (Phase 7)
+
+**Status:** Accepted. Registered 2026-09-27, before any Phase 7 code or
+result existed.
+
+### Context
+
+Rule-based timing failed on GLD (ADR-010) and on six ETFs (ADR-011). The
+owner's goal is live trading by an agent, which ADR-008 allows only after a
+strategy beats buy-and-hold historically and in a year of paper trading.
+This ADR tests whether models that learn from past patterns can do that.
+
+### Unchanged from ADR-011
+
+Universe, adjusted prices, simulator, costs, monthly signals, the 1% band,
+the 10% halt, selection rule, 60/20/20 split, rolling 504/126/126 windows,
+benchmarks B1 and B2, and clarifications 1 to 14. The gate is ADR-011's R1
+to R5 and F1 to F4, unchanged.
+
+### Data the models learn from
+
+- **Features** (13, scale-free, point-in-time, `gld_features_v2` on
+  adjusted prices): ret_1, ret_5, ret_20, ret_60, ret_126, ret_252,
+  mom_6_1, mom_12_1, dist_sma_200, rsi_14, vol_20, vol_60, drawdown_252.
+- **Samples:** one per asset per month-end where all 13 features exist.
+- **Label:** the asset's return from that month-end close to the next
+  month-end close, divided by its vol_60 at the start, so that one
+  volatile asset does not dominate a model pooled across all six.
+- **No look-ahead:** the model sees only the history up to the signal
+  day. A month-end is recognized once the next trading day is in that
+  history, so a sample is used for training only if its label ended
+  before the signal day. A test proves it.
+
+### Training
+
+- At every signal day, one model is fitted on all eligible samples since
+  the start of history, pooled across the six assets.
+- Features are standardized with the training samples' mean and standard
+  deviation only.
+- A model needs labels from at least 24 distinct month-ends (and, for
+  nearest neighbours, at least 50 samples); until then, every asset is out.
+
+### Candidates (4)
+
+| Candidate | Model (scikit-learn) | In when | Sizing |
+|---|---|---|---|
+| ridge_eq | Ridge(alpha=1.0) | prediction > 0 | 1/6 |
+| ridge_iv35 | Ridge(alpha=1.0) | prediction > 0 | iv35 (ADR-011) |
+| knn_eq | KNeighborsRegressor(n_neighbors=50) | prediction > 0 | 1/6 |
+| knn_iv35 | KNeighborsRegressor(n_neighbors=50) | prediction > 0 | iv35 (ADR-011) |
+
+Settings are fixed; nothing is tuned after results exist.
+
+### Implementation
+
+scikit-learn 1.9.1, numpy 2.5.3, and scipy 1.18.1, pinned exactly in an
+`ml` extra. Floats are used only inside the models; each prediction becomes
+a Decimal rounded to 10 places before the in/out decision. Money stays
+Decimal. These libraries need Python 3.12 or later, so CI moves from 3.11
+to 3.13, the version the owner runs.
+
+### Trials
+
+With ADR-010 (12) and ADR-011 (6), 22 registered candidates in total. The
+report states this count.
+
+### What happens after the run
+
+- The result is recorded here and in the experiment log.
+- **If R1 to R5 pass:** a new ADR for paper trading the model, then a year
+  of forward testing (F1 to F4). Only if those pass, a separate ADR may
+  consider live trading, starting with minimal capital; that ADR is the only
+  way rule 1 (paper only) can change.
+- **If they fail:** stop. The candidates are not tuned and re-run.
+
+---
+
 ## ADR Template
 
 ### ADR-XXX — Title
