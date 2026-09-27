@@ -44,8 +44,9 @@ Main CLI (`python -m tradenow <command>`):
 
 - Data: `tiingo-import --start D --end D [--symbols A,B | --universe]` and
   `universe` (aligned six-ETF history).
-- Research: `gld` (12 registered GLD candidates plus the gate verdict) and
-  `features --date D`.
+- Research: `gld` (12 registered GLD candidates plus the gate verdict),
+  `multi` (6 registered multi-asset candidates against B1 and B2, R1 to R5,
+  reports in `artifacts/multi/`), and `features --date D`.
 - Paper trading: `paper-plan`, `paper-submit --approve ID`, `paper-status`,
   `paper-report`, `paper-halt`, `paper-resume --confirm`, and
   `paper-auto [--dry-run | --check]`.
@@ -72,6 +73,10 @@ Every command appends one line to `data/private/logs/runs.jsonl`.
 - Multi-asset simulation: `portfolio.py` (`simulate_portfolio` with an
   allocator over `History` views, `signal_days`, benchmarks
   `benchmark_equal_weight` (B1) and `benchmark_spy` (B2)).
+- Multi-asset research: `multi_strategies.py` (`MULTI_CANDIDATES`, rules,
+  `capped_inverse_volatility`), `multi_evaluation.py` (selection, holdout,
+  rolling and stressed checks, chained drawdowns), `multi_research.py`
+  (report and Markdown), `live_gate.multi_research_gate` (R1 to R5).
 - Paper trading: `alpaca_paper.py` (adapter), `paper_rules.py` (pure rules),
   `paper_trading.py` (orchestration and store), `paper_auto.py`,
   `risk_config.py`, `notify.py`, and `execution_quality.py`.
@@ -88,8 +93,8 @@ Every command appends one line to `data/private/logs/runs.jsonl`.
   changed. Investigate; never simply re-bless the hashes.
 - Identical inputs must give byte-identical reports (tested).
 - Keep ruff and mypy clean and CI green on both operating systems.
-- Commits have short imperative subjects with a body explaining why. Work on a
-  branch and merge through a pull request.
+- Commits have short imperative subjects with a body explaining why. Solo
+  project: commit directly to `main` and push; no branches or pull requests.
 
 ## Status (2026-09-27)
 
@@ -103,18 +108,14 @@ Every command appends one line to `data/private/logs/runs.jsonl`.
   (`mom`, `trend`, `both` × `eq`, `iv35`). Rebalancing is monthly. The gate
   is the strictest option: beat **both** an equal-weight buy-and-hold of the
   six **and** SPY on return, with no larger drawdown (R1 to R5, then F1 to F4).
-- MA1 (ADR-011), MA2 (multi-symbol data pipeline), and MA3 (portfolio
-  simulator, `portfolio.py`) are done. ADR-011 has a dated "Clarifications"
-  section (sizing at the open, pro-rata buy shrink, full exits, first-bar
-  signal day, blocked-order retries, round trips, warmup, month-ends). Read
-  it before MA4. No multi-asset result on real data exists until MA5.
+- MA1 to MA4 are done: data pipeline, portfolio simulator (`portfolio.py`),
+  the six candidates, selection, rolling windows, the R1 to R5 gate, and the
+  `multi` command. ADR-011's "Clarifications" section (items 1 to 14) settles
+  sizing, round trips, retries, warmup, chaining, and the stress test. No
+  multi-asset result on real data exists yet.
 
-## Next: MA4 (read ADR-011 and its clarifications first)
+## Next: MA5, the one real run (the owner runs it)
 
-- **MA4:** the six strategies (per-asset weights, inverse-volatility sizing
-  over 60-day volatility capped at 35%), selection and rolling windows
-  (504/126/126), gate checks R1 to R5, and a `multi` command writing a report
-  and an experiment record.
 - **MA5:** the owner runs `multi` once on real data, and the result is
   recorded in ADR-011.
 - **MA6:** only if R1 to R5 pass, multi-asset paper trading (a new ADR),
