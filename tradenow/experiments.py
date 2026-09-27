@@ -8,6 +8,7 @@ candidates are tried, the likelier one looks good by chance (ADR-008).
 """
 
 import json
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from .settings import PROJECT_ROOT, SETTINGS
 
 EXPERIMENT_FILE = SETTINGS.data_dir / "experiments.jsonl"
 STRATEGY_FAMILY = "gld_adr010_candidates_v1"
+MULTI_STRATEGY_FAMILY = "multi_adr011_candidates_v1"
 
 
 def code_commit(root: Path = PROJECT_ROOT) -> str | None:
@@ -63,6 +65,34 @@ def experiment_record(report: dict) -> dict:
     }
 
 
+def multi_experiment_record(report: dict) -> dict:
+    """A `multi` run (ADR-011): the same fields, from the multi-asset report."""
+    evaluation, data = report["evaluation"], report["data"]
+    return {
+        "experiment_id": report["run_id"],
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+        "strategy_version": MULTI_STRATEGY_FAMILY,
+        "candidates": report["candidates"],
+        "candidates_evaluated": len(report["candidates"]),
+        "selected_hypothesis": evaluation["selection"]["selected_hypothesis"],
+        "feature_version": report["feature_version"],
+        "feature_code_sha256": report["feature_code_sha256"],
+        "config": report["config"],
+        "data": {key: data[key] for key in ("symbols", "sha256", "first_date",
+                                            "last_date", "bars")},
+        "code_sha256": report["code_sha256"], "code_commit": code_commit(),
+        "results": {
+            "holdout_strategy": evaluation["holdout"]["strategy"]["metrics"],
+            "holdout_b1": evaluation["holdout"]["b1"]["metrics"],
+            "holdout_b2": evaluation["holdout"]["b2"]["metrics"],
+            "rolling": evaluation["rolling_pre_holdout"]["summary"],
+            "rolling_stressed": evaluation["rolling_pre_holdout_stressed"]["summary"],
+            "live_gate": {"verdict": report["live_gate"]["verdict"],
+                          "failing_checks": report["live_gate"]["failing_checks"]}},
+        "notes": "",
+    }
+
+
 def read_experiments(path: Path = EXPERIMENT_FILE) -> list[dict]:
     if not path.exists():
         return []
@@ -77,7 +107,8 @@ def read_experiments(path: Path = EXPERIMENT_FILE) -> list[dict]:
     return records
 
 
-def record_experiment(report: dict, path: Path = EXPERIMENT_FILE) -> dict:
+def record_experiment(report: dict, path: Path = EXPERIMENT_FILE,
+                      build: Callable[[dict], dict] = experiment_record) -> dict:
     """Append the run unless this exact experiment is already logged."""
     existing = read_experiments(path)
     known = {item.get("experiment_id") for item in existing}
@@ -85,7 +116,7 @@ def record_experiment(report: dict, path: Path = EXPERIMENT_FILE) -> dict:
     if new:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(experiment_record(report)) + "\n")
+            handle.write(json.dumps(build(report)) + "\n")
     return {"experiment_id": report["run_id"], "recorded": new,
             "distinct_experiments": len(known | {report["run_id"]}),
             "file": str(path)}

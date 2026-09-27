@@ -72,6 +72,45 @@ def research_gate(evaluation: dict, candidates: int | None = None) -> dict:
             "candidates_evaluated": candidates, "checks": checks}
 
 
+def multi_research_gate(evaluation: dict, candidates: int | None = None) -> dict:
+    """R1-R5 of ADR-011 from the multi-asset rolling windows: the strategy must
+    beat both B1 (equal weight) and B2 (SPY). The holdout is not evidence."""
+    summary = evaluation["rolling_pre_holdout"]["summary"]
+    stressed = evaluation["rolling_pre_holdout_stressed"]
+    windows = summary["windows"]
+    needed = (MIN_WINDOW_BEAT_FRACTION * windows).to_integral_value(rounding=ROUND_CEILING)
+
+    def returns(item: dict) -> tuple[Decimal, Decimal, Decimal]:
+        return (Decimal(item["compounded_return_pct"]),
+                Decimal(item["compounded_b1_return_pct"]),
+                Decimal(item["compounded_b2_return_pct"]))
+
+    strategy, b1, b2 = returns(summary)
+    s_strategy, s_b1, s_b2 = returns(stressed["summary"])
+    drawdown = Decimal(summary["chained_max_drawdown_pct"])
+    b1_drawdown = Decimal(summary["chained_b1_max_drawdown_pct"])
+    b2_drawdown = Decimal(summary["chained_b2_max_drawdown_pct"])
+    checks = [
+        _check("R1_BEATS_BOTH_BENCHMARKS", windows > 0 and strategy > b1 and strategy > b2,
+               f"compounded {strategy}% vs B1 {b1}% and B2 {b2}% over {windows} windows"),
+        _check("R2_BEATS_CONSISTENTLY", windows > 0 and summary["beat_both_windows"] >= needed,
+               f"beat both in {summary['beat_both_windows']} of {windows} windows "
+               f"(needs {needed})"),
+        _check("R3_ENOUGH_TRADES", summary["closed_trades"] >= MIN_CLOSED_TRADES,
+               f"{summary['closed_trades']} closed round trips (needs {MIN_CLOSED_TRADES})"),
+        _check("R4_SURVIVES_COSTS", windows > 0 and s_strategy > s_b1 and s_strategy > s_b2,
+               f"at ${stressed['slippage_per_share']}/share slippage: {s_strategy}% vs "
+               f"B1 {s_b1}% and B2 {s_b2}%"),
+        _check("R5_NO_DEEPER_DRAWDOWN",
+               windows > 0 and drawdown <= b1_drawdown and drawdown <= b2_drawdown,
+               f"chained max drawdown {drawdown}% vs B1 {b1_drawdown}% and B2 "
+               f"{b2_drawdown}%"),
+    ]
+    return {"stage": "research", "gate": "ADR-011",
+            "passed": all(item["passed"] for item in checks),
+            "candidates_evaluated": candidates, "checks": checks}
+
+
 def forward_run(history: list[EquitySnapshot]) -> list[EquitySnapshot]:
     """The latest unbroken run of sessions under one strategy version, one per date."""
     by_date = {snapshot.date: snapshot for snapshot in history}

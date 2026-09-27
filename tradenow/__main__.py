@@ -11,7 +11,7 @@ from pathlib import Path
 
 from .alpaca_paper import PaperClient, load_paper_credentials
 from .equity import EquityConfig
-from .experiments import record_experiment
+from .experiments import multi_experiment_record, record_experiment
 from .features import snapshot
 from .gld_research import (
     MAX_GLD_CSV_BYTES,
@@ -22,6 +22,7 @@ from .gld_research import (
 )
 from .logs import Run, configure_logging, recorded_run
 from .market_data import load_bars
+from .multi_research import run_multi, save_multi_report
 from .notify import desktop_notify
 from .offline import MAX_LOCAL_CSV_BYTES, run_local_csv, run_offline, save_offline
 from .paper_auto import GLD_HISTORY_START, Notices, paper_auto
@@ -231,6 +232,39 @@ def gld_main(argv: list[str], run: Run) -> int:
     return 0
 
 
+def multi_main(argv: list[str], run: Run) -> int:
+    """The registered multi-asset research run (ADR-011) on the latest imports."""
+    parser = argparse.ArgumentParser(prog="tradenow multi",
+                                     description="Evaluate the six registered multi-asset "
+                                                 "candidates against B1 and B2")
+    parser.add_argument("--output", type=Path, default=Path("artifacts/multi"))
+    args = parser.parse_args(argv)
+    settings = load_settings()
+    try:
+        report = run_multi(load_universe(settings.tiingo_dir))
+        json_path, md_path = save_multi_report(report, args.output)
+        experiment = record_experiment(report, settings.data_dir / "experiments.jsonl",
+                                       multi_experiment_record)
+    except (OSError, ValueError, InvalidOperation) as error:
+        return _fail(run, error)
+    evaluation = report["evaluation"]
+    _emit(run, {"mode": report["mode"], "run_id": report["run_id"],
+                "symbols": report["data"]["symbols"], "bars": report["data"]["bars"],
+                "data_sha256": report["data"]["sha256"],
+                "candidates_evaluated": len(report["candidates"]),
+                "rolling_summary": evaluation["rolling_pre_holdout"]["summary"],
+                "rolling_stressed_summary":
+                    evaluation["rolling_pre_holdout_stressed"]["summary"],
+                "holdout_selected": evaluation["selection"]["selected_hypothesis"],
+                "live_gate": {"verdict": report["live_gate"]["verdict"],
+                              "research_passed": report["live_gate"]["research"]["passed"],
+                              "failing_checks": report["live_gate"]["failing_checks"]},
+                "experiment": experiment,
+                "report_file": str(json_path.resolve()),
+                "readable_report": str(md_path.resolve())})
+    return 0
+
+
 def _gld_source(path: Path | None) -> tuple[bytes, str]:
     """A named GLD CSV, or the latest verified Tiingo import."""
     if path is None:
@@ -317,7 +351,7 @@ PAPER_COMMANDS = ("paper-status", "paper-plan", "paper-submit", "paper-halt", "p
 def replay_main(argv: list[str], run: Run) -> int:
     parser = argparse.ArgumentParser(
         description="Replay local MGC bars without network or broker access",
-        epilog=("Use 'gld', 'offline', 'stress', 'web', or 'tiingo-import' for the research "
+        epilog=("Use 'gld', 'multi', 'universe', 'offline', 'stress', 'web', or 'tiingo-import' for the research "
                 "tools, and 'paper-status', 'paper-plan', 'paper-submit', 'paper-halt', "
                 "'paper-resume', 'paper-report', or 'paper-auto' for Alpaca paper trading."),
     )
@@ -366,7 +400,7 @@ def notify_test_main(argv: list[str], run: Run) -> int:
 
 COMMANDS = {"offline": offline_main, "stress": stress_main, "web": web_main,
             "tiingo-import": tiingo_main, "gld": gld_main, "notify-test": notify_test_main,
-            "features": features_main, "universe": universe_main}
+            "features": features_main, "universe": universe_main, "multi": multi_main}
 
 
 def main(argv: list[str] | None = None) -> int:
