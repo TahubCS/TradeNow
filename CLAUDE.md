@@ -108,16 +108,16 @@ Every command appends one line to `data/private/logs/runs.jsonl`.
   (`mom`, `trend`, `both` × `eq`, `iv35`). Rebalancing is monthly. The gate
   is the strictest option: beat **both** an equal-weight buy-and-hold of the
   six **and** SPY on return, with no larger drawdown (R1 to R5, then F1 to F4).
-- MA1 to MA4 are done: data pipeline, portfolio simulator (`portfolio.py`),
-  the six candidates, selection, rolling windows, the R1 to R5 gate, and the
-  `multi` command. ADR-011's "Clarifications" section (items 1 to 14) settles
-  sizing, round trips, retries, warmup, chaining, and the stress test. No
-  multi-asset result on real data exists yet.
+- **Multi-asset research (ADR-011) failed the gate** (MA5, experiment
+  `5fa2a52477b95cf4`): +11.0% compounded across 27 rolling windows against
+  +144.9% for B1 and +435.2% for SPY; R1, R2 and R4 failed. It held cash in
+  16 of 27 windows and trailed both benchmarks when invested. That is final:
+  the six candidates and thresholds are not tuned and re-run.
 
-## Next: MA5, the one real run (the owner runs it)
+## Next: the owner decides
 
-- **MA5:** the owner runs `multi` once on real data, and the result is
-  recorded in ADR-011.
-- **MA6:** only if R1 to R5 pass, multi-asset paper trading (a new ADR),
-  then a year of forward testing. If they fail, stop or register Phase 7 in
-  a new ADR.
+MA6 (multi-asset paper trading) is not built, because R1 to R5 did not all
+pass. ADR-011 leaves two options: stop, accepting that a low-cost index fund
+is the better choice, or register Phase 7 (machine learning on this dataset)
+in a new ADR before writing any code for it. Start neither without the
+owner's decision.

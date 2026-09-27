@@ -565,6 +565,45 @@ details the rules above leave open; none loosens the gate.
     gate uses only the rolling windows before it. A tie in validation score
     goes to the earlier candidate in the registered order, as in ADR-010.
 
+### Result (2026-09-27)
+
+Evaluated once with `multi` on Tiingo's adjusted history of the six ETFs,
+5,135 common days from 2006-04-28 (SLV's first bar) to 2026-09-25
+(experiment `5fa2a52477b95cf4`, data `f0881e80…`). **Verdict: FAIL.**
+Failing checks: R1, R2, R4. R3 and R5 passed.
+
+| Rolling tests before the holdout (27 windows, Oct 2008 to May 2022) | Registered process | B1 equal weight | B2 SPY |
+|---|---|---|---|
+| Compounded return | +11.0% | +144.9% | +435.2% |
+| Compounded return at $0.10 slippage (R4) | +7.1% | +127.0% | +426.2% |
+| Chained maximum drawdown (R5) | 16.7% | 26.1% | 33.7% |
+| Windows beaten | — | 8 of 27 | 3 of 27 |
+
+- **Beat both benchmarks in 1 of 27 windows** (17 needed). 33 closed
+  round trips (30 needed).
+- **Mostly in cash.** In 16 of 27 windows no candidate had a positive
+  validation score, so the process held cash. Those windows missed +86% (B1)
+  and +207% (B2).
+- **Behind when invested, too.** In the 11 windows with a selected
+  candidate, the process made +11.0% against +31.6% for B1 and +74.6% for B2
+  over the same windows. The low drawdown (R5) comes mainly from sitting in
+  cash, not from avoiding losses while invested.
+- The rolling tests begin in late October 2008, so most of the 2008 crash,
+  where trend-following is known to help, falls in development periods, not
+  test blocks. That is a property of the registered method, not a reason
+  to re-run.
+
+The holdout (information only, 2022-08-23 to 2026-09-25) selected
+`trend_eq`: +54.9% with a 10.6% maximum drawdown, against +95.1% and 13.5%
+for B1 and +97.7% and 18.7% for B2.
+
+No candidate trades real money, and multi-asset paper trading (MA6) is not
+built. As registered, the candidates and thresholds are not tuned and
+re-run. Counting ADR-010, 18 registered candidates across two experiments
+have failed. The remaining options are to stop, accepting that a low-cost
+index fund is the better choice, or to register Phase 7 in a new ADR before
+any work on it.
+
 ---
 
 ## ADR Template
