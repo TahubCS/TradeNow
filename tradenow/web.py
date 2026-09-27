@@ -9,10 +9,10 @@ from io import StringIO
 from pathlib import Path
 from urllib.parse import parse_qs
 
-from .gld_research import MAX_GLD_CSV_BYTES, latest_imported_gld, run_gld_csv
 from .alpaca_paper import PaperClient, load_paper_credentials
+from .gld_research import MAX_GLD_CSV_BYTES, latest_imported_gld, run_gld_csv
 from .offline import run_local_csv, run_offline
-from .paper_trading import PaperStore, paper_status
+from .paper_trading import PaperStore, paper_report, paper_status
 from .stress import run_stress
 
 
@@ -104,7 +104,18 @@ def paper_view(store: PaperStore | None = None, client=None) -> dict:
     """Read-only paper snapshot; never plans, submits, or changes the kill switch."""
     store = store or PaperStore()
     client = client or PaperClient(load_paper_credentials())
-    return {"status": paper_status(client, store), "latest_plan": store.latest_plan()}
+    return {"status": paper_status(client, store), "latest_plan": store.latest_plan(),
+            "execution": execution_view(store)}
+
+
+def execution_view(store: PaperStore) -> dict:
+    """Execution-quality summary from local files; missing data is shown, not fatal."""
+    try:
+        report = paper_report(store, *latest_imported_gld())
+    except (OSError, ValueError) as error:
+        return {"error": str(error)}
+    return {"summary": report["summary"], "runs": report["runs"],
+            "data_last_date": report["data"]["last_date"]}
 
 
 # Only loopback names are accepted, which blocks DNS-rebinding requests.

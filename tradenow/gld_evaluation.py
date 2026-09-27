@@ -1,7 +1,7 @@
 """Offline GLD benchmarks, cost sensitivity, and pre-holdout rolling checks."""
 
 from dataclasses import replace
-from decimal import Decimal, ROUND_DOWN
+from decimal import ROUND_DOWN, Decimal
 
 from .equity import EquityBar, EquityConfig, simulate_equity
 from .offline import CANDIDATES
@@ -75,6 +75,7 @@ def _rolling_checks(bars: list[EquityBar], config: EquityConfig) -> dict:
             if best_score is None or score > best_score:
                 best_score, best_name, best_config = score, name, candidate
                 best_development_return = development_result["total_return_pct"]
+        assert best_score is not None and best_config is not None
         selected = best_name if best_score > 0 else None
         result = simulate_equity(test, replace(best_config, enable_entries=selected is not None))
         benchmark = _buy_and_hold(test, config, config.max_position_fraction)

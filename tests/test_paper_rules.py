@@ -4,9 +4,17 @@ from decimal import Decimal
 
 from tradenow.alpaca_paper import BrokerOrder, DailyBar, Position
 from tradenow.equity import EquityBar, EquityConfig, simulate_equity
-from tradenow.paper_rules import (NOT_FOUND, SUBMITTING, LedgerOrder, apply_broker_order,
-                                  cross_check_closes, measure_drawdown, plan_order,
-                                  reconcile, sma_signal)
+from tradenow.paper_rules import (
+    NOT_FOUND,
+    SUBMITTING,
+    LedgerOrder,
+    apply_broker_order,
+    cross_check_closes,
+    measure_drawdown,
+    plan_order,
+    reconcile,
+    sma_signal,
+)
 
 
 def gld_bars(closes: list[str], start: date = date(2026, 1, 5)) -> list[EquityBar]:

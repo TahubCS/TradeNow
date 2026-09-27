@@ -1,4 +1,5 @@
 import json
+import shutil
 import unittest
 from contextlib import contextmanager
 from datetime import date
@@ -7,6 +8,7 @@ from unittest.mock import patch
 from urllib.error import HTTPError
 from uuid import uuid4
 
+from tradenow.gld_research import latest_imported_gld
 from tradenow.tiingo import PRIVATE_DIR, _get_json, import_gld, load_api_key
 
 
@@ -22,9 +24,7 @@ def private_test_dir():
     try:
         yield directory
     finally:
-        for child in directory.iterdir():
-            child.unlink()
-        directory.rmdir()
+        shutil.rmtree(directory)
 
 
 def price(day: str, close: float = 201.0) -> dict:
@@ -71,6 +71,46 @@ class TiingoTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "already imported"):
                     import_gld(START, END, "sample-secret", directory)
                 get_again.assert_not_called()
+
+    def import_rows(self, directory, rows):
+        with patch("tradenow.tiingo._get_json",
+                   side_effect=[(META, b"{}"), (rows, json.dumps(rows).encode())]) as get:
+            result = import_gld(START, END, "sample-secret", directory)
+        return result, get.call_count
+
+    def test_early_import_is_refreshed_once_the_close_is_published(self):
+        with private_test_dir() as directory:
+            early, _ = self.import_rows(directory, [price("2026-09-24")])
+            self.assertEqual((early["result"], early["last_bar"]), ("IMPORTED", "2026-09-24"))
+
+            same, calls = self.import_rows(directory, [price("2026-09-24")])
+            self.assertEqual((same["result"], calls), ("UNCHANGED", 2))
+            self.assertFalse((directory / "superseded").exists())
+
+            later, _ = self.import_rows(directory, [price("2026-09-24"),
+                                                   price("2026-09-25", 201.8)])
+            self.assertEqual((later["result"], later["previous_last_bar"]),
+                             ("REFRESHED", "2026-09-24"))
+            self.assertIn("2026-09-25,GLD", Path(later["bars_file"]).read_text(encoding="utf-8"))
+            self.assertEqual(len(list((directory / "superseded").iterdir())), 3)
+            source, name = latest_imported_gld(directory)
+            self.assertEqual(name, "GLD-20260924-20260925.csv")
+            self.assertIn(b"2026-09-25", source)
+
+            with patch("tradenow.tiingo._get_json") as get_again:
+                with self.assertRaisesRegex(ValueError, "already imported"):
+                    import_gld(START, END, "sample-secret", directory)
+                get_again.assert_not_called()
+
+    def test_refresh_refuses_revised_history_and_keeps_earlier_import(self):
+        with private_test_dir() as directory:
+            early, _ = self.import_rows(directory, [price("2026-09-24")])
+            before = Path(early["bars_file"]).read_bytes()
+            with self.assertRaisesRegex(ValueError, "revised earlier GLD bars \\(2026-09-24\\)"):
+                self.import_rows(directory, [price("2026-09-24", 201.5),
+                                             price("2026-09-25")])
+            self.assertEqual(Path(early["bars_file"]).read_bytes(), before)
+            self.assertFalse((directory / "superseded").exists())
 
     def test_rejects_bad_bars_without_saving(self):
         with private_test_dir() as directory:

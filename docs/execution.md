@@ -100,7 +100,16 @@ paper-plan: kill switch? -> paper account? -> market closed? -> reconcile
             -> Alpaca SIP cross-check -> drawdown -> saved plan (no order)
 paper-submit --approve ID: kill switch? -> plan unchanged and not expired
             -> reconcile -> ledger write -> POST with client order ID
+paper-report: ledger + plans + Tiingo history + run log -> execution quality
 ```
+
+Each ledger order stores the plan's reference close and the time it was sent.
+Reconciliation copies Alpaca's `submitted_at` and `filled_at` into the order.
+`tradenow/execution_quality.py` turns these into slippage (against the plan's
+close, the session open, and the simulator's fill), fill latency, and fill and
+rejection rates. Every command is also recorded once in
+`data/private/logs/runs.jsonl`, including refusals with their `PaperBlocked`
+code.
 
 The local ledger (`data/private/alpaca/ledger.json`) is the internal position
 record: the sum of filled quantities of the orders this system sent. An order is

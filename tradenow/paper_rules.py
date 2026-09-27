@@ -4,8 +4,8 @@ Nothing here performs I/O, so every rule can be tested without Alpaca.
 """
 
 from dataclasses import dataclass, replace
-from datetime import date
-from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP
+from datetime import date, datetime
+from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 
 from .alpaca_paper import FINAL_ORDER_STATUSES, BrokerOrder, DailyBar, Position
 from .equity import EquityBar
@@ -42,6 +42,12 @@ class LedgerOrder:
     filled_qty: int = 0
     filled_avg_price: Decimal | None = None
     broker_order_id: str | None = None
+    # Execution-quality evidence: the plan's price, when this system sent the
+    # order, and Alpaca's own submission and fill times.
+    reference_close: Decimal | None = None
+    sent_at: datetime | None = None
+    submitted_at: datetime | None = None
+    filled_at: datetime | None = None
 
     @property
     def is_final(self) -> bool:
@@ -84,8 +90,8 @@ def sma_signal(bars: list[EquityBar], fast: int, slow: int) -> Signal:
     """The same SMA rule as simulate_equity, evaluated at the last close."""
     if not 0 < fast < slow or len(bars) < slow:
         raise ValueError("Not enough GLD bars for the selected SMA windows")
-    fast_sma = sum(bar.close for bar in bars[-fast:]) / fast
-    slow_sma = sum(bar.close for bar in bars[-slow:]) / slow
+    fast_sma = sum((bar.close for bar in bars[-fast:]), Decimal(0)) / fast
+    slow_sma = sum((bar.close for bar in bars[-slow:]), Decimal(0)) / slow
     return Signal(fast_sma, slow_sma, int(fast_sma > slow_sma))
 
 
@@ -128,7 +134,9 @@ def apply_broker_order(order: LedgerOrder, broker: BrokerOrder | None,
         raise ValueError(f"Alpaca order {order.client_order_id} differs from the ledger")
     return replace(order, status=broker.status, filled_qty=broker.filled_qty,
                    filled_avg_price=broker.filled_avg_price,
-                   broker_order_id=broker.broker_order_id)
+                   broker_order_id=broker.broker_order_id,
+                   submitted_at=broker.submitted_at or order.submitted_at,
+                   filled_at=broker.filled_at or order.filled_at)
 
 
 def reconcile(ledger: list[LedgerOrder], positions: list[Position],
@@ -153,11 +161,11 @@ def reconcile(ledger: list[LedgerOrder], positions: list[Position],
             problems.append(f"UNKNOWN_OPEN_ORDER: {order.symbol} {order.side} {order.qty}")
     open_ids = {order.client_order_id for order in open_orders}
     pending = [order for order in ledger if not order.is_final]
-    for order in pending:
-        if order.status == SUBMITTING:
-            problems.append(f"UNRESOLVED_SUBMISSION: {order.client_order_id}")
-        elif order.client_order_id not in open_ids:
-            problems.append(f"LEDGER_ORDER_NOT_OPEN: {order.client_order_id}")
+    for record in pending:
+        if record.status == SUBMITTING:
+            problems.append(f"UNRESOLVED_SUBMISSION: {record.client_order_id}")
+        elif record.client_order_id not in open_ids:
+            problems.append(f"LEDGER_ORDER_NOT_OPEN: {record.client_order_id}")
     if len(pending) > 1:
         problems.append(f"DUPLICATE_OPEN_ORDERS: {len(pending)}")
     return Reconciliation(expected, broker_shares, len(open_orders), tuple(problems))

@@ -146,6 +146,48 @@ any mismatch engages a persistent kill switch.
 
 ---
 
+## ADR-007 — Hashed Local Files Instead of a Database
+
+**Status:** Accepted
+
+### Context
+
+The roadmap lists a database connection (Phase 0) and PostgreSQL/Parquet
+persistence (Phase 1). The system holds one symbol's daily bars (about 5,500
+rows), one paper ledger, and a few plans and logs per day, all used by one
+person on one machine.
+
+### Decision
+
+Keep all state in files under one data directory (`TRADENOW_DATA_DIR`,
+`data/private/` by default):
+
+- market data: CSV plus raw provider JSON and a manifest with SHA-256 hashes,
+- paper ledger, plans, and kill switch: JSON written atomically (temp file,
+  then rename),
+- logs and the run log: JSON lines.
+
+Every report records the hash of the data it used, so any result can be
+reproduced from the files it names.
+
+### Alternatives Considered
+
+- PostgreSQL: adds a server to install, back up, and migrate, and gives no
+  benefit at this data volume.
+- Parquet: suits large columnar data. The CSVs here are small, and CSV stays
+  readable and diffable.
+
+### Consequences
+
+- No database service to run; backups are a copy of one directory.
+- The ledger has a single writer. Two commands run at the same time could
+  race; the routine runs them one after another.
+- Revisit when any of these holds: more than a handful of symbols, intraday
+  bars, several processes writing state at once, or queries across many runs
+  that the JSON-lines files make slow.
+
+---
+
 ## ADR Template
 
 ### ADR-XXX — Title

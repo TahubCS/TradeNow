@@ -1,5 +1,5 @@
-import unittest
 import hashlib
+import unittest
 from dataclasses import replace
 from decimal import Decimal
 from io import StringIO

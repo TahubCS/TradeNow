@@ -3,10 +3,10 @@ from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 
+from tests.test_gld_research import sample_gld_csv
 from tradenow.equity import EquityBar, EquityConfig
 from tradenow.gld_evaluation import _buy_and_hold
 from tradenow.gld_research import run_gld_csv
-from tests.test_gld_research import sample_gld_csv
 
 
 class GldEvaluationTests(unittest.TestCase):
