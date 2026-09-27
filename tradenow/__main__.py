@@ -11,6 +11,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from .alpaca_paper import PaperClient, load_paper_credentials
+from .data_check import CHECK_START, check_symbol, require_passing_check, save_check, summarize
 from .equity import EquityConfig
 from .experiments import multi_experiment_record, record_experiment
 from .features import snapshot
@@ -43,7 +44,7 @@ from .settings import load_settings
 from .simulation import Config, simulate
 from .stress import run_stress, save_stress
 from .tiingo import import_complete, import_gld, import_symbol, load_api_key
-from .universe import UNIVERSE, describe, load_universe
+from .universe import BROAD_UNIVERSE, UNIVERSE, describe, load_universe
 
 
 def _fail(run: Run, error: BaseException) -> int:
@@ -145,9 +146,12 @@ def tiingo_main(argv: list[str], run: Run) -> int:
     which = parser.add_mutually_exclusive_group()
     which.add_argument("--symbols", help="Comma-separated tickers (default: GLD)")
     which.add_argument("--universe", action="store_true",
-                       help=f"All registered symbols: {', '.join(UNIVERSE)}")
+                       help=f"The ADR-011 symbols: {', '.join(UNIVERSE)}")
+    which.add_argument("--broad", action="store_true",
+                       help=f"The {len(BROAD_UNIVERSE)} ADR-013 symbols; already complete "
+                            "imports are skipped, so a stopped run resumes")
     args = parser.parse_args(argv)
-    symbols = (list(UNIVERSE) if args.universe else
+    symbols = (list(UNIVERSE) if args.universe else list(BROAD_UNIVERSE) if args.broad else
                [item.strip().upper() for item in args.symbols.split(",")] if args.symbols
                else ["GLD"])
     if len(symbols) == 1:
@@ -175,9 +179,10 @@ def tiingo_main(argv: list[str], run: Run) -> int:
         run.fail(error)
         return 1
     summary: dict[str, object] = {"result": "IMPORTED", "symbols": results}
-    if args.universe:
+    if args.universe or args.broad:
         try:
-            summary["universe"] = describe(load_universe())
+            summary["universe"] = describe(load_universe(
+                symbols=BROAD_UNIVERSE if args.broad else UNIVERSE))
         except (OSError, ValueError) as error:
             summary["universe"] = {"error": str(error)}
     _emit(run, _jsonable(summary))
@@ -234,7 +239,7 @@ def gld_main(argv: list[str], run: Run) -> int:
 
 
 def _study_main(argv: list[str], run: Run, command: str, description: str,
-                load_study: Callable[[], Study]) -> int:
+                load_study: Callable[[], Study], require_check: bool = False) -> int:
     """A registered multi-asset study on the latest imports: reports, one
     experiment record per distinct run, and the gate verdict."""
     parser = argparse.ArgumentParser(prog=f"tradenow {command}", description=description)
@@ -242,7 +247,11 @@ def _study_main(argv: list[str], run: Run, command: str, description: str,
     args = parser.parse_args(argv)
     settings = load_settings()
     try:
-        report = run_study(load_universe(settings.tiingo_dir), load_study())
+        study = load_study()
+        universe = load_universe(settings.tiingo_dir, study.symbols)
+        check = (require_passing_check(universe, settings.data_dir / "checks")
+                 if require_check else None)
+        report = run_study(universe, study)
         json_path, md_path = save_multi_report(report, args.output)
         experiment = record_experiment(report, settings.data_dir / "experiments.jsonl",
                                        multi_experiment_record)
@@ -261,6 +270,8 @@ def _study_main(argv: list[str], run: Run, command: str, description: str,
                 "live_gate": {"verdict": report["live_gate"]["verdict"],
                               "research_passed": report["live_gate"]["research"]["passed"],
                               "failing_checks": report["live_gate"]["failing_checks"]},
+                "data_check": None if check is None else {
+                    "passed": check["passed"], "universe_sha256": check["universe_sha256"]},
                 "experiment": experiment,
                 "report_file": str(json_path.resolve()),
                 "readable_report": str(md_path.resolve())})
@@ -282,6 +293,54 @@ def _ml_study() -> Study:
                          "missing). Install them with: python -m pip install -e \".[ml]\", "
                          "or run it with the project's .venv Python") from None
     return ML_STUDY
+
+
+def _broad_study() -> Study:
+    try:
+        from .broad_research import BROAD_STUDY
+    except ImportError as error:
+        raise ValueError(f"The broad command needs the pinned model libraries ({error.name} "
+                         "is missing). Install them with: python -m pip install -e \".[ml]\", "
+                         "or run it with the project's .venv Python") from None
+    return BROAD_STUDY
+
+
+def broad_main(argv: list[str], run: Run) -> int:
+    """The registered broad ETF universe study (ADR-013); needs a passing data check."""
+    return _study_main(argv, run, "broad", "Evaluate the ten registered candidates on the "
+                       "35-ETF universe against B1 and B2", _broad_study, require_check=True)
+
+
+def data_check_main(argv: list[str], run: Run) -> int:
+    """Compare the latest Tiingo imports with Alpaca's daily closes (ADR-013)."""
+    parser = argparse.ArgumentParser(prog="tradenow data-check",
+                                     description="Cross-check Tiingo raw closes against "
+                                                 "Alpaca before a registered run")
+    parser.add_argument("--universe", action="store_true",
+                        help="Check the six ADR-011 symbols instead of the 35 of ADR-013")
+    args = parser.parse_args(argv)
+    symbols = UNIVERSE if args.universe else BROAD_UNIVERSE
+    settings = load_settings()
+    try:
+        universe = load_universe(settings.tiingo_dir, symbols)
+        client = PaperClient(load_paper_credentials())
+        end = universe.dates[-1]
+        results = {symbol: check_symbol(universe.assets[symbol].raw_close,
+                                        client.daily_history(symbol, CHECK_START, end),
+                                        CHECK_START, end)
+                   for symbol in symbols}
+        summary = summarize(universe, results)
+        path = save_check(summary, settings.data_dir / "checks")
+    except (OSError, ValueError) as error:
+        return _fail(run, error)
+    _emit(run, {"passed": summary["passed"], "failed_symbols": summary["failed_symbols"],
+                "universe_sha256": summary["universe_sha256"],
+                "start": summary["start"], "end": summary["end"],
+                "results": {symbol: {key: item[key] for key in
+                                     ("passed", "shared_days", "mismatches")}
+                            for symbol, item in summary["results"].items()},
+                "file": str(path.resolve())})
+    return 0 if summary["passed"] else 1
 
 
 def ml_main(argv: list[str], run: Run) -> int:
@@ -376,7 +435,7 @@ PAPER_COMMANDS = ("paper-status", "paper-plan", "paper-submit", "paper-halt", "p
 def replay_main(argv: list[str], run: Run) -> int:
     parser = argparse.ArgumentParser(
         description="Replay local MGC bars without network or broker access",
-        epilog=("Use 'gld', 'multi', 'ml', 'universe', 'offline', 'stress', 'web', or 'tiingo-import' for the research "
+        epilog=("Use 'gld', 'multi', 'ml', 'broad', 'data-check', 'universe', 'offline', 'stress', 'web', or 'tiingo-import' for the research "
                 "tools, and 'paper-status', 'paper-plan', 'paper-submit', 'paper-halt', "
                 "'paper-resume', 'paper-report', or 'paper-auto' for Alpaca paper trading."),
     )
@@ -425,7 +484,8 @@ def notify_test_main(argv: list[str], run: Run) -> int:
 
 COMMANDS = {"offline": offline_main, "stress": stress_main, "web": web_main,
             "tiingo-import": tiingo_main, "gld": gld_main, "notify-test": notify_test_main,
-            "features": features_main, "universe": universe_main, "multi": multi_main, "ml": ml_main}
+            "features": features_main, "universe": universe_main, "multi": multi_main, "ml": ml_main,
+            "broad": broad_main, "data-check": data_check_main}
 
 
 def main(argv: list[str] | None = None) -> int:

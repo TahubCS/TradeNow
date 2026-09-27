@@ -38,6 +38,7 @@ class Study:
     candidates: tuple[PortfolioCandidate, ...]
     registered_trials_total: int  # every registered candidate so far, all ADRs
     code: tuple[str, ...] = CORE_CODE
+    symbols: tuple[str, ...] = UNIVERSE  # the registered universe, in order
 
 
 MULTI_STUDY = Study("multi_asset_research", "Multi-asset research report", "ADR-011",
@@ -64,8 +65,8 @@ def _meaning(passed: bool, adr: str) -> str:
 
 def run_study(universe: Universe, study: Study,
               config: PortfolioConfig = PortfolioConfig()) -> dict:
-    if universe.symbols != UNIVERSE:
-        raise ValueError(f"Multi-asset research needs exactly {', '.join(UNIVERSE)} in order")
+    if universe.symbols != study.symbols:
+        raise ValueError(f"{study.adr} needs exactly {', '.join(study.symbols)} in order")
     candidates = study.candidates
     evaluation = evaluate_multi(universe, config, candidates)
     config_record = {key: str(value) for key, value in vars(config).items()}

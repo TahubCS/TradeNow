@@ -44,8 +44,9 @@ D = Decimal
 
 def synthetic_universe(count: int, seed: int = 1,
                        drifts: tuple[int, ...] = (3, -1, 2, 0, 1, -2),
-                       noise: int = 15) -> Universe:
-    """Six random-walk ETFs on one weekday calendar; drift and noise in 0.1% steps."""
+                       noise: int = 15, symbols: tuple[str, ...] = UNIVERSE) -> Universe:
+    """Random-walk ETFs on one weekday calendar; drift and noise in 0.1% steps.
+    Drifts repeat when there are more symbols than drifts."""
     rng = random.Random(seed)
     days, day = [], date(2010, 1, 4)
     while len(days) < count:
@@ -53,16 +54,17 @@ def synthetic_universe(count: int, seed: int = 1,
             days.append(day)
         day += timedelta(days=1)
     assets = {}
-    for index, symbol in enumerate(UNIVERSE):
-        price, bars = D(50 + 10 * index), []
+    for index, symbol in enumerate(symbols):
+        price, bars = D(50 + 10 * (index % 12)), []
         for day in days:
             open_ = price
-            step = 1000 + rng.randint(-noise, noise) + drifts[index]
+            step = 1000 + rng.randint(-noise, noise) + drifts[index % len(drifts)]
             price = max(D(5), (price * step / 1000).quantize(D("0.01")))
             bars.append(EquityBar(day, symbol, open_, max(open_, price), min(open_, price),
                                   price, 10000))
-        assets[symbol] = AssetHistory(symbol, bars, {}, 0, 0, f"{symbol}.csv", symbol * 8)
-    return Universe(UNIVERSE, days, assets, f"synthetic-{seed}-{count}")
+        assets[symbol] = AssetHistory(symbol, bars, {bar.date: bar.close for bar in bars}, 0, 0,
+                                       f"{symbol}.csv", symbol * 8)
+    return Universe(symbols, days, assets, f"synthetic-{seed}-{count}-{len(symbols)}")
 
 
 def feature_row(**values: str | None) -> FeatureRow:

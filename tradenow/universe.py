@@ -20,6 +20,14 @@ from .tiingo import PRIVATE_DIR, latest_import
 
 
 UNIVERSE = ("GLD", "SLV", "SPY", "EFA", "IEF", "DBC")
+# The broad universe (ADR-013): 35 ETFs chosen by category before their data was seen.
+BROAD_UNIVERSE = ("SPY", "QQQ", "IWM", "MDY",
+                  "XLB", "XLE", "XLF", "XLI", "XLK", "XLP", "XLU", "XLV", "XLY",
+                  "EFA", "EWJ", "EWG", "EWU", "EWC", "EWA",
+                  "EEM", "EWZ", "EWT", "EWY", "FXI",
+                  "IYR",
+                  "SHY", "IEF", "TLT", "LQD", "TIP", "AGG",
+                  "GLD", "SLV", "DBC", "USO")
 MAX_CSV_BYTES = 3_000_000
 # Enough for one 504/126/126-bar rolling window (ADR-011).
 MIN_COMMON_BARS = 756

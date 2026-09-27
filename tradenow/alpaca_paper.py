@@ -8,7 +8,7 @@ import json
 import os
 import re
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -27,6 +27,9 @@ ACCEPTED_ENDPOINTS = {PAPER_ENDPOINT, PAPER_ENDPOINT + "/", PAPER_ENDPOINT + "/v
 ENV_NAMES = ("ALPACA_PAPER_ENDPOINT", "ALPACA_PAPER_KEY_ID",
              "ALPACA_PAPER_SECRET_KEY")
 MAX_RESPONSE_BYTES = 1_000_000
+# About 250 KB of JSON per page, well inside the response limit.
+HISTORY_PAGE_BARS = 2000
+MAX_HISTORY_PAGES = 20
 MAX_ORDER_SHARES = 10_000
 FRACTION_BEYOND_MICROS = re.compile(r"(\.\d{6})\d+")
 CLIENT_ORDER_ID = re.compile(r"tn-gld-[a-z0-9-]{1,48}")
@@ -289,12 +292,23 @@ def parse_order(raw: object) -> BrokerOrder:
 
 
 def parse_daily_bars(raw: object) -> list[DailyBar]:
-    item = _object(raw, "bars response")
-    if item.get("next_page_token"):
+    bars, token = parse_bar_page(raw)
+    if token:
         raise AlpacaError("Alpaca bars response was unexpectedly paginated")
+    return bars
+
+
+def parse_bar_page(raw: object,
+                   after: DailyBar | None = None) -> tuple[list[DailyBar], str | None]:
+    """One page of daily bars and the token for the next page, if any. `after`
+    is the previous page's last bar; this page must continue after it."""
+    item = _object(raw, "bars response")
+    token = item.get("next_page_token")
+    if token is not None and (not isinstance(token, str) or not token):
+        raise AlpacaError("Alpaca returned an invalid page token")
     rows = item.get("bars")
     if rows is None:
-        return []
+        return [], token
     if not isinstance(rows, list):
         raise AlpacaError("Alpaca returned malformed bars")
     bars: list[DailyBar] = []
@@ -309,10 +323,11 @@ def parse_daily_bars(raw: object) -> list[DailyBar]:
             raise AlpacaError("Alpaca returned an invalid bar volume")
         open_price = _decimal(bar.get("o"), "bar open")
         close = _decimal(bar.get("c"), "bar close")
-        if open_price <= 0 or close <= 0 or (bars and stamp.date() <= bars[-1].date):
+        previous = bars[-1] if bars else after
+        if open_price <= 0 or close <= 0 or (previous and stamp.date() <= previous.date):
             raise AlpacaError("Alpaca returned invalid or unordered daily bars")
         bars.append(DailyBar(stamp.date(), open_price, close, volume))
-    return bars
+    return bars, token
 
 
 class PaperClient:
@@ -399,6 +414,31 @@ class PaperClient:
         if not isinstance(result, list):
             raise AlpacaError("Alpaca returned a malformed cancel response")
         return len(result)
+
+    def daily_history(self, symbol: str, start: date, end: date) -> list[DailyBar]:
+        """Consolidated (SIP) raw daily bars from start through end, page by
+        page, used only to cross-check Tiingo imports (ADR-013)."""
+        if not symbol.isascii() or not symbol.isalpha() or not symbol.isupper():
+            raise ValueError("Invalid symbol")
+        bars: list[DailyBar] = []
+        token: str | None = None
+        for _ in range(MAX_HISTORY_PAGES):
+            # Daily bars are stamped 04:00 or 05:00 UTC, so the next midnight
+            # includes the end day.
+            query = {"timeframe": "1Day", "start": start.isoformat(),
+                     "end": (end + timedelta(days=1)).isoformat(), "adjustment": "raw",
+                     "feed": "sip",
+                     "limit": HISTORY_PAGE_BARS}
+            if token:
+                query["page_token"] = token
+            page, token = parse_bar_page(
+                self._request("GET", DATA_ENDPOINT,
+                              f"/v2/stocks/{symbol}/bars?{urlencode(query)}"),
+                bars[-1] if bars else None)
+            bars.extend(page)
+            if token is None:
+                return bars
+        raise AlpacaError(f"Alpaca returned more than {MAX_HISTORY_PAGES} pages of bars")
 
     def gld_daily_bars(self, start: date, end: datetime) -> list[DailyBar]:
         """Consolidated (SIP) raw daily bars, used only to cross-check Tiingo."""

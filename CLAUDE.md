@@ -42,12 +42,18 @@ python -m unittest discover -s tests -v    # CI runs these three on Ubuntu and W
 
 Main CLI (`python -m tradenow <command>`):
 
-- Data: `tiingo-import --start D --end D [--symbols A,B | --universe]` and
-  `universe` (aligned six-ETF history).
+- Data: `tiingo-import --start D --end D [--symbols A,B | --universe | --broad]`
+  (`--broad` = the 35 ADR-013 ETFs; complete imports are skipped, so a run
+  stopped by a rate limit resumes), `universe` (aligned six-ETF history), and
+  `data-check` (Tiingo vs Alpaca raw closes since 2016 for the 35 ETFs;
+  saved in `data/private/checks/`).
 - Research: `gld` (12 registered GLD candidates plus the gate verdict),
   `multi` (6 registered multi-asset candidates against B1 and B2, R1 to R5,
   reports in `artifacts/multi/`), `ml` (4 registered ADR-012 models, same
-  gate, reports in `artifacts/ml/`), and `features --date D`.
+  gate, reports in `artifacts/ml/`), `broad` (10 ADR-013 candidates on 35
+  ETFs; refuses to run without a passing `data-check` of the same data), and
+  `features --date D`. `ml` and `broad` need the `ml` extra: run them with
+  `.venv\Scripts\python.exe` (the system Python has no pip).
 - Paper trading: `paper-plan`, `paper-submit --approve ID`, `paper-status`,
   `paper-report`, `paper-halt`, `paper-resume --confirm`, and
   `paper-auto [--dry-run | --check]`.
@@ -83,7 +89,12 @@ Every command appends one line to `data/private/logs/runs.jsonl`.
   samples from `History` views, volatility-scaled labels), `ml_models.py`
   (the only module using scikit-learn and floats), `ml_strategies.py`
   (`ML_CANDIDATES`, cached `Predictor`), `ml_research.py` (`ML_STUDY`). The
-  CLI imports these only for `ml`, so other commands run without them.
+  CLI imports these only for `ml` and `broad`, so other commands run without
+  them.
+- Broad universe (ADR-013): `universe.BROAD_UNIVERSE` (35 ETFs),
+  `multi_strategies.RelativeStrength` and the `iv10` sizing,
+  `broad_research.py` (`BROAD_STUDY`), `data_check.py` (Tiingo vs Alpaca
+  check), and `PaperClient.daily_history` (paged Alpaca bars).
 - Paper trading: `alpaca_paper.py` (adapter), `paper_rules.py` (pure rules),
   `paper_trading.py` (orchestration and store), `paper_auto.py`,
   `risk_config.py`, `notify.py`, and `execution_quality.py`.
@@ -120,18 +131,22 @@ Every command appends one line to `data/private/logs/runs.jsonl`.
   +144.9% for B1 and +435.2% for SPY; R1, R2 and R4 failed. It held cash in
   16 of 27 windows and trailed both benchmarks when invested. That is final:
   the six candidates and thresholds are not tuned and re-run.
-
 - **Phase 7 machine learning (ADR-012) failed the gate** (experiment
   `50421538d55eb807`): +24.2% compounded across 27 rolling windows against
   +144.9% for B1 and +435.2% for SPY; R1, R2 and R4 failed. It held cash in
   16 windows, trailed both benchmarks when invested, and lost money in the
   final validation period, so the holdout held cash. That is final.
-- **All 22 registered candidates (ADR-010, 011, 012) have failed.** The
-  `ml` command needs the `ml` extra; run it with `.venv\Scripts\python.exe`
-  (the system Python has no pip).
+- **All 22 registered candidates (ADR-010, 011, 012) have failed.**
+- **ADR-013 (35-ETF broad universe) is registered and built:** 10 candidates
+  (ADR-011 rules with eq and iv10, relative strength top 25% with and
+  without an absolute filter, ridge and knn pooled across 35), same gate.
+  32 registered candidates in total.
 
-## Next: the owner decides
+## Next: the owner runs ADR-013 once
 
-No strategy has earned paper trading, let alone live money. Any new idea
-needs its own registration ADR before code, and counts as more trials
-against the same history. Start nothing new without the owner's decision.
+1. `python -m tradenow tiingo-import --broad --start 2006-01-01 --end <last session>`
+   (repeat if Tiingo's rate limit stops it; finished symbols are skipped).
+2. `python -m tradenow data-check`: every symbol must pass. If one fails,
+   investigate and re-import; dropping it needs an ADR-013 amendment first.
+3. `.venv\Scripts\python.exe -m tradenow broad`, once. Record the result and
+   the data check in ADR-013; nothing is tuned or re-run.

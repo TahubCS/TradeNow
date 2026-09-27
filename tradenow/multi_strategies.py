@@ -21,8 +21,10 @@ from .strategies import History
 
 
 RULES = ("mom", "trend", "both")
-SIZINGS = ("eq", "iv35")
+SIZINGS = ("eq", "iv35")  # ADR-011
 IV_CAP = Decimal("0.35")
+# Inverse-volatility caps by sizing name: iv35 (ADR-011), iv10 (ADR-013).
+IV_CAPS = {"iv35": IV_CAP, "iv10": Decimal("0.10")}
 # Weights are rounded down so they never add up to more than 100%.
 WEIGHT_STEP = Decimal("1e-10")
 
@@ -80,7 +82,7 @@ class MultiCandidate:
     sizing: str
 
     def __post_init__(self) -> None:
-        if self.rule not in RULES or self.sizing not in SIZINGS:
+        if self.rule not in RULES or (self.sizing != "eq" and self.sizing not in IV_CAPS):
             raise ValueError(f"Unregistered candidate {self.rule}_{self.sizing}")
 
     @property
@@ -102,13 +104,14 @@ class MultiCandidate:
 def sized_weights(sizing: str, rows: Mapping[str, FeatureRow],
                   in_symbols: set[str]) -> dict[str, Decimal]:
     """Weights for the assets that are in; the others keep their share in cash.
-    eq gives each asset 1/n of equity; iv35 caps inverse volatility over every
-    asset with a value, before out assets are dropped (clarification 13)."""
+    eq gives each asset 1/n of equity; iv35 and iv10 cap inverse volatility
+    over every asset with a value, before out assets are dropped (clarification 13)."""
     if sizing == "eq":
         weights = dict.fromkeys(rows, _floor(Decimal(1) / len(rows)))
-    elif sizing == "iv35":
+    elif sizing in IV_CAPS:
         weights = capped_inverse_volatility({symbol: row["vol_60"]
-                                             for symbol, row in rows.items()})
+                                             for symbol, row in rows.items()},
+                                            IV_CAPS[sizing])
     else:
         raise ValueError(f"Unknown sizing {sizing!r}")
     return {symbol: weight for symbol, weight in weights.items() if symbol in in_symbols}
@@ -118,3 +121,35 @@ def sized_weights(sizing: str, rows: Mapping[str, FeatureRow],
 # breaks ties in selection. Changing this list needs a new ADR.
 MULTI_CANDIDATES: tuple[MultiCandidate, ...] = tuple(
     MultiCandidate(rule, sizing) for sizing in SIZINGS for rule in RULES)
+
+
+@dataclass(frozen=True)
+class RelativeStrength:
+    """Hold the quarter of assets with the highest 12-1 momentum (ADR-013),
+    each at 1/K of equity where K is the asset count divided by 4, rounded up.
+    Ties go to the earlier asset. With `absolute`, a chosen asset whose
+    momentum is not positive stays in cash."""
+    absolute: bool
+
+    @property
+    def name(self) -> str:
+        return "xsmom_top25_abs" if self.absolute else "xsmom_top25"
+
+    @property
+    def parameters(self) -> dict[str, str]:
+        return {"rank_by": "mom_12_1", "hold": "top 25%, rounded up",
+                "absolute_filter": "mom_12_1 > 0" if self.absolute else "none"}
+
+    def __call__(self, views: Mapping[str, History]) -> dict[str, Decimal]:
+        """Target weights after today's close (an Allocator for portfolio.py)."""
+        order = list(views)
+        momentum: dict[str, Decimal] = {}
+        for symbol, view in views.items():
+            value = view.today["mom_12_1"]
+            if value is not None:  # still warming up: not ranked
+                momentum[symbol] = value
+        ranked = sorted(momentum, key=lambda symbol: (-momentum[symbol], order.index(symbol)))
+        hold = -(-len(order) // 4)
+        weight = _floor(Decimal(1) / hold)
+        return {symbol: weight for symbol in ranked[:hold]
+                if not self.absolute or momentum[symbol] > 0}
