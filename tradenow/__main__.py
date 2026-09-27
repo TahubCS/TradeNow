@@ -5,6 +5,7 @@ import hashlib
 import json
 import sys
 from dataclasses import replace
+from datetime import date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from .market_data import load_bars
 from .offline import MAX_LOCAL_CSV_BYTES, run_local_csv, run_offline, save_offline
 from .simulation import Config, simulate
 from .stress import run_stress, save_stress
+from .tiingo import import_gld, load_api_key
 
 
 def offline_main(argv: list[str]) -> int:
@@ -95,6 +97,22 @@ def web_main(argv: list[str]) -> int:
     return 0
 
 
+def tiingo_main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(description="Manually import private GLD daily data from Tiingo")
+    parser.add_argument("--start", required=True, type=date.fromisoformat,
+                        help="First requested date (YYYY-MM-DD)")
+    parser.add_argument("--end", required=True, type=date.fromisoformat,
+                        help="Last requested date (YYYY-MM-DD)")
+    args = parser.parse_args(argv)
+    try:
+        result = import_gld(args.start, args.end, load_api_key())
+    except (OSError, ValueError) as error:
+        print(f"Error: {error}", file=sys.stderr)
+        return 1
+    print(json.dumps(result, indent=2))
+    return 0
+
+
 def main() -> int:
     if len(sys.argv) > 1 and sys.argv[1] == "offline":
         return offline_main(sys.argv[2:])
@@ -102,10 +120,12 @@ def main() -> int:
         return stress_main(sys.argv[2:])
     if len(sys.argv) > 1 and sys.argv[1] == "web":
         return web_main(sys.argv[2:])
+    if len(sys.argv) > 1 and sys.argv[1] == "tiingo-import":
+        return tiingo_main(sys.argv[2:])
 
     parser = argparse.ArgumentParser(
         description="Replay local MGC bars without network or broker access",
-        epilog="Use 'python -m tradenow offline', 'stress', or 'web' for the research tools.",
+        epilog="Use 'offline', 'stress', 'web', or 'tiingo-import' for the research tools.",
     )
     parser.add_argument("--data", type=Path,
                         default=Path(__file__).resolve().parent.parent / "sample_data" / "mgc_synthetic.csv",

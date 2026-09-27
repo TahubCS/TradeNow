@@ -5,7 +5,8 @@ default it generates a fictional contract (`MGC_SIM`), validates its bars,
 evaluates fixed trade hypotheses, selects one on validation data, and replays the
 holdout period through proposals, risk checks, a simulated order manager, and
 portfolio accounting. It cannot submit brokerage orders or contact Databento.
-There are no broker or market-data API clients, credentials, or outbound calls.
+The MGC research commands remain offline. The separate, manual `tiingo-import`
+command fetches GLD end-of-day ETF data when explicitly run.
 
 ## Run locally
 
@@ -18,6 +19,28 @@ python -m tradenow stress
 python -m tradenow
 python -m unittest discover -s tests -v
 ```
+
+## Import GLD daily history
+
+Place `TIINGO_API_KEY=your_key` in the project-root `.env.local`, or set the
+`TIINGO_API_KEY` environment variable. Both the file and downloaded data under
+`data/private/` are ignored by Git. Do not commit or share Tiingo bars; Tiingo's
+[free EOD plan](https://www.tiingo.com/about/pricing) is for internal use.
+
+Run one manual import with explicit dates:
+
+```powershell
+python -m tradenow tiingo-import --start 2004-11-18 --end 2026-09-25
+```
+
+This command makes at most two Tiingo EOD requests for `GLD` and never retries
+automatically. It checks ticker coverage, validates daily bars, and saves raw
+JSON, a CSV containing raw and adjusted prices, and a source manifest under
+`data/private/tiingo/`. Repeating the same date range stops before any API
+request. The key is sent in an authorization header and never written to the
+data files. The GLD share simulator currently accepts local bars in Python;
+connecting these imported bars to the research CLI and dashboard is the next
+step.
 
 ## Local dashboard
 
@@ -122,7 +145,8 @@ partial fills, and live or paper brokerage behavior remain outside this model.
 
 ## Spending and trading boundary
 
-- No Databento requests are made, so running this code consumes **zero** data credits.
+- No Databento requests are made, so running this code consumes **zero** Databento credits.
+- Only `tiingo-import` calls Tiingo, using the free EOD GLD endpoints when run manually.
 - No Alpaca or Tradovate integration exists, so running it cannot place a paper or live order.
 - Brokerage integration and data purchasing will require separate, explicit work.
 
