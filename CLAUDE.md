@@ -69,6 +69,9 @@ Every command appends one line to `data/private/logs/runs.jsonl`.
 - Multi-asset data: `tiingo.py` (`import_symbol`, `prune_imports`,
   `latest_import`) and `universe.py` (`UNIVERSE`, adjusted prices,
   `align`, `load_universe`).
+- Multi-asset simulation: `portfolio.py` (`simulate_portfolio` with an
+  allocator over `History` views, `signal_days`, benchmarks
+  `benchmark_equal_weight` (B1) and `benchmark_spy` (B2)).
 - Paper trading: `alpaca_paper.py` (adapter), `paper_rules.py` (pure rules),
   `paper_trading.py` (orchestration and store), `paper_auto.py`,
   `risk_config.py`, `notify.py`, and `execution_quality.py`.
@@ -100,26 +103,13 @@ Every command appends one line to `data/private/logs/runs.jsonl`.
   (`mom`, `trend`, `both` × `eq`, `iv35`). Rebalancing is monthly. The gate
   is the strictest option: beat **both** an equal-weight buy-and-hold of the
   six **and** SPY on return, with no larger drawdown (R1 to R5, then F1 to F4).
-- MA1 (ADR-011) and MA2 (multi-symbol data pipeline) are done.
+- MA1 (ADR-011), MA2 (multi-symbol data pipeline), and MA3 (portfolio
+  simulator, `portfolio.py`) are done. ADR-011 has a dated "Clarifications"
+  section (sizing at the open, pro-rata buy shrink, full exits, first-bar
+  signal day, blocked-order retries, round trips, warmup, month-ends). Read
+  it before MA4. No multi-asset result on real data exists until MA5.
 
-## Next: MA3, the portfolio simulator (read ADR-011 first)
-
-Build `tradenow/portfolio.py`:
-
-- Cash plus up to six positions in whole shares, never margin, total weight
-  at most 100%.
-- Monthly rebalance: target weights from the month's last close, orders at
-  the next open. Sells before buys. An asset trades only if its target
-  differs by more than 1% of equity.
-- $0.01 slippage per share, zero commission (stress test $0.10), and a 10%
-  portfolio drawdown halt checked daily.
-- Per-asset and portfolio metrics through `metrics.py`.
-- Benchmarks B1 (equal-weight buy-and-hold of the six, rebalanced monthly,
-  same costs) and B2 (100% SPY).
-- Tests use synthetic data only. No multi-asset result on real data exists
-  until MA5.
-
-Then:
+## Next: MA4 (read ADR-011 and its clarifications first)
 
 - **MA4:** the six strategies (per-asset weights, inverse-volatility sizing
   over 60-day volatility capped at 35%), selection and rolling windows
