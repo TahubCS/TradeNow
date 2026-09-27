@@ -97,6 +97,21 @@ unfilled orders when volume, session, or stale-data checks fail.
 
 ---
 
+## ADR-005 — Add a Cash-Funded GLD Simulation Path
+
+**Status:** Accepted
+
+GLD is the first planned instrument for real historical-data research. A local,
+long-only share simulator uses whole shares, deducts purchases from cash, and
+marks open shares at the daily close. Signals at a close can fill no earlier than
+the next bar's open. Futures margin, rolls, and expiry rules remain confined to
+the existing MGC simulator.
+
+This module currently accepts local bars only. It has no Tiingo or brokerage
+connection, and its daily-bar fills cannot establish actual execution quality.
+
+---
+
 ## ADR Template
 
 ### ADR-XXX — Title
