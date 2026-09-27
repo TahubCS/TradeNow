@@ -1,4 +1,6 @@
+import base64
 import os
+import subprocess
 import tempfile
 import unittest
 from dataclasses import replace
@@ -9,7 +11,7 @@ from unittest.mock import patch
 
 from tests.test_paper_trading import LAST, SOURCE, FakeBroker
 from tradenow.alpaca_paper import DailyBar
-from tradenow.notify import SECRET_PREFIXES, TOAST_SCRIPT, desktop_notify
+from tradenow.notify import ENCODED_SCRIPT, SECRET_PREFIXES, TOAST_SCRIPT, desktop_notify
 from tradenow.paper_auto import LOCK_NAME, paper_auto
 from tradenow.paper_trading import PaperBlocked, PaperStore, paper_report
 from tradenow.risk_config import RiskConfig, default_risk, risk_sha256
@@ -144,7 +146,8 @@ class NotifyTests(unittest.TestCase):
                 patch("tradenow.notify.subprocess.run") as run:
             desktop_notify("Paper order sent", hostile)
         command = run.call_args.args[0]
-        self.assertEqual(command[-1], TOAST_SCRIPT)
+        self.assertEqual(command[-2:], ["-EncodedCommand", ENCODED_SCRIPT])
+        self.assertEqual(base64.b64decode(command[-1]).decode("utf-16-le"), TOAST_SCRIPT)
         self.assertNotIn("Remove-Item", " ".join(command))
         child = run.call_args.kwargs["env"]
         self.assertIn("Remove-Item", child["TRADENOW_TOAST_MESSAGE"])
@@ -153,11 +156,28 @@ class NotifyTests(unittest.TestCase):
         self.assertEqual(child["PATH"], "C:\\bin")
         self.assertNotIn("shell", run.call_args.kwargs)
 
-    def test_notification_failure_does_not_raise(self):
+    def test_failures_are_reported_not_raised(self):
         with patch("tradenow.notify.IS_WINDOWS", True), \
                 patch("tradenow.notify.powershell_path", return_value=Path("C:/ps.exe")), \
                 patch("tradenow.notify.subprocess.run", side_effect=OSError("no desktop")):
-            desktop_notify("Title", "Message")  # logged as a warning, not raised
+            result = desktop_notify("Title", "Message")
+        self.assertEqual(result, {"shown": False, "detail": "OSError: no desktop"})
+        failed = subprocess.CompletedProcess([], 1, b"", b"Exception calling Show\r\n  at line 3")
+        with patch("tradenow.notify.IS_WINDOWS", True), \
+                patch("tradenow.notify.powershell_path", return_value=Path("C:/ps.exe")), \
+                patch("tradenow.notify.subprocess.run", return_value=failed):
+            result = desktop_notify("Title", "Message")
+        self.assertFalse(result["shown"])
+        self.assertEqual(result["detail"], "PowerShell exit 1: Exception calling Show at line 3")
+
+    def test_success_reports_which_method_was_used(self):
+        shown = subprocess.CompletedProcess([], 0, b"shown: balloon (toast failed: x)\r\n", b"")
+        with patch("tradenow.notify.IS_WINDOWS", True), \
+                patch("tradenow.notify.powershell_path", return_value=Path("C:/ps.exe")), \
+                patch("tradenow.notify.subprocess.run", return_value=shown):
+            result = desktop_notify("Title", "Message")
+        self.assertTrue(result["shown"])
+        self.assertEqual(result["detail"], "shown: balloon (toast failed: x)")
 
 
 if __name__ == "__main__":
