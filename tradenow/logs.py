@@ -92,10 +92,13 @@ def configure_logging(log_dir: Path, console_level: int = logging.INFO) -> loggi
         log_dir / LOG_FILE, maxBytes=MAX_LOG_BYTES, backupCount=LOG_BACKUPS, encoding="utf-8")
     file_handler.setFormatter(JsonFormatter())
     file_handler.setLevel(logging.DEBUG)
-    console = logging.StreamHandler(sys.stderr)
-    console.setFormatter(_RedactingFormatter("%(levelname)s %(name)s: %(message)s"))
-    console.setLevel(console_level)
-    for handler in (file_handler, console):
+    handlers: list[logging.Handler] = [file_handler]
+    if sys.stderr is not None:  # pythonw.exe (scheduled runs) has no console
+        console = logging.StreamHandler(sys.stderr)
+        console.setFormatter(_RedactingFormatter("%(levelname)s %(name)s: %(message)s"))
+        console.setLevel(console_level)
+        handlers.append(console)
+    for handler in handlers:
         _HANDLERS.append(handler)
         logger.addHandler(handler)
     logger.setLevel(logging.DEBUG)

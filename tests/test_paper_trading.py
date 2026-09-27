@@ -30,6 +30,7 @@ from tradenow.paper_trading import (
     paper_status,
     paper_submit,
 )
+from tradenow.risk_config import LoadedRisk, RiskConfig
 
 
 EASTERN = timezone(timedelta(hours=-5))
@@ -43,8 +44,9 @@ def gld_csv(bars: int = 241) -> bytes:
     while index < bars:
         if day.weekday() < 5:
             close = Decimal(str(round(300 + index * 0.5 + 8 * math.sin(index / 6), 2)))
-            rows.append(f"{day},GLD,{close},{close + 1},{close - 1},{close},1000,"
-                        f"{close},{close + 1},{close - 1},{close},1000,0.0,1.0")
+            # Realistic GLD volume, so the 1% volume cap does not bind.
+            rows.append(f"{day},GLD,{close},{close + 1},{close - 1},{close},8000000,"
+                        f"{close},{close + 1},{close - 1},{close},8000000,0.0,1.0")
             index += 1
         day += timedelta(days=1)
     return ("\n".join(rows) + "\n").encode()
@@ -61,6 +63,7 @@ class FakeBroker:
     def __init__(self):
         self.cash = Decimal("100000")
         self.equity = Decimal("100000")
+        self.last_equity: Decimal | None = Decimal("100000")
         self.paper = True
         self.is_open = False
         self.next_open = datetime(2025, 12, 9, 9, 30, tzinfo=EASTERN)
@@ -81,7 +84,8 @@ class FakeBroker:
 
     def account(self):
         self._check()
-        return Account("ACTIVE", "USD", self.cash, self.equity, self.paper, False)
+        return Account("ACTIVE", "USD", self.cash, self.equity, self.paper, False,
+                       self.last_equity)
 
     def clock(self):
         self._check()
@@ -319,6 +323,42 @@ class PaperWorkflowTests(unittest.TestCase):
         saved = json.loads(self.store.ledger_path.read_text(encoding="utf-8"))
         self.assertEqual(saved["schema_version"], 2)
         self.assertEqual(self.store.load_ledger(), ledger)
+
+    def test_daily_loss_sells_then_pauses_exactly_one_session(self):
+        plan = self.plan()
+        paper_submit(self.broker, self.store, plan["plan_id"])
+        self.broker.fill(plan["order"]["client_order_id"], LAST.close)
+        # Next evening: equity fell 3% since the previous close (limit 2%).
+        self.broker.now += timedelta(days=1)
+        self.broker.next_open += timedelta(days=1)
+        self.broker.last_equity, self.broker.equity = Decimal("100000"), Decimal("97000")
+        exit_plan = self.plan()
+        self.assertEqual((exit_plan["action"], exit_plan["reason"]), ("SELL", "DAILY_LOSS_EXIT"))
+        self.assertTrue(exit_plan["daily_loss"]["breached"])
+        self.assertFalse(exit_plan["drawdown"]["halted"])
+        paper_submit(self.broker, self.store, exit_plan["plan_id"])
+        self.broker.fill(exit_plan["order"]["client_order_id"], LAST.close)
+        # The following evening the loss is not repeated, so buying resumes.
+        self.broker.next_open += timedelta(days=1)
+        self.broker.last_equity = self.broker.equity
+        self.assertEqual(self.plan()["action"], "BUY")
+
+    def test_unknown_previous_close_equity_blocks_buys(self):
+        self.broker.last_equity = None
+        plan = self.plan()
+        self.assertEqual((plan["action"], plan["reason"]), ("NO_TRADE", "DAILY_LOSS_PAUSE"))
+
+    def test_risk_settings_shape_the_order_and_are_recorded(self):
+        risk = LoadedRisk(RiskConfig(max_position_fraction=Decimal("0.25"),
+                                     max_volume_fraction=Decimal("0.000005")), "r" * 64, "test")
+        plan = paper_plan(self.broker, self.store, SOURCE, "GLD.csv", risk)
+        self.assertEqual((plan["action"], plan["reason"]), ("BUY", "VOLUME_LIMIT"))
+        self.assertEqual(plan["order"]["qty"], 40)  # 0.0005% of 8,000,000 shares
+        self.assertEqual(plan["risk"]["sha256"], "r" * 64)
+        history = self.store.equity_history()
+        self.assertEqual([item.date for item in history], [LAST.date])
+        self.assertEqual(history[0].strategy_version, plan["strategy_version"])
+        self.assertNotEqual(plan["strategy_version"], self.plan()["strategy_version"])
 
     def test_tampered_plan_is_refused(self):
         plan = self.plan()

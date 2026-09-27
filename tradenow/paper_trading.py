@@ -19,7 +19,8 @@ from typing import Any, Protocol
 from .alpaca_paper import Account, AlpacaError, BrokerOrder, Clock, DailyBar, PaperOrder, Position
 from .equity import EquityConfig, simulate_equity
 from .execution_quality import SessionReference, order_quality, summarize_quality, summarize_runs
-from .gld_research import parse_gld_csv
+from .gld_research import parse_gld_csv, run_gld_csv
+from .live_gate import EquitySnapshot, forward_gate, research_gate, strategy_version, verdict
 from .logs import read_runs
 from .offline import CANDIDATES, evaluate_candidates
 from .paper_rules import (
@@ -28,11 +29,14 @@ from .paper_rules import (
     Reconciliation,
     apply_broker_order,
     cross_check_closes,
+    measure_daily_loss,
     measure_drawdown,
     plan_order,
     reconcile,
     sma_signal,
+    volume_cap,
 )
+from .risk_config import LoadedRisk, default_risk
 from .settings import SETTINGS
 
 
@@ -43,6 +47,7 @@ CROSS_CHECK_CALENDAR_DAYS = 21
 PLAN_ID = re.compile(r"[0-9a-f]{16}")
 # Version 2 adds execution-quality fields to each order; version 1 still loads.
 LEDGER_SCHEMA = 2
+APPROVALS = ("manual", "auto")
 
 
 class PaperBlocked(ValueError):
@@ -134,7 +139,8 @@ def _order_from_json(item: object) -> LedgerOrder:
             reference_close=_optional_decimal(item.get("reference_close"), "reference_close"),
             sent_at=_optional_time(item.get("sent_at"), "sent_at"),
             submitted_at=_optional_time(item.get("submitted_at"), "submitted_at"),
-            filled_at=_optional_time(item.get("filled_at"), "filled_at"))
+            filled_at=_optional_time(item.get("filled_at"), "filled_at"),
+            approval=str(item.get("approval", "manual")))
     except (KeyError, TypeError, ValueError):
         raise ValueError("Paper ledger has a malformed order") from None
     if (order.side not in ("buy", "sell") or type(order.qty) is not int
@@ -150,6 +156,8 @@ class PaperStore:
         self.ledger_path = directory / "ledger.json"
         self.kill_path = directory / "kill_switch.json"
         self.plans_dir = directory / "plans"
+        self.equity_path = directory / "equity_history.jsonl"
+        self.gate_path = directory / "live_gate.json"
 
     def _write(self, path: Path, data: object) -> None:
         """Replace atomically so a crash never leaves a half-written state file."""
@@ -228,6 +236,52 @@ class PaperStore:
             raise PaperBlocked("PLAN_TAMPERED", "the saved order ID does not match the plan")
         return plan
 
+    def record_equity(self, snapshot: EquitySnapshot) -> None:
+        """Append one close's equity; the live-trading gate's forward evidence."""
+        self.directory.mkdir(parents=True, exist_ok=True)
+        line = json.dumps({"date": snapshot.date.isoformat(), "equity": str(snapshot.equity),
+                           "strategy_version": snapshot.strategy_version,
+                           "recorded_at": datetime.now(timezone.utc).isoformat()})
+        with self.equity_path.open("a", encoding="utf-8") as handle:
+            handle.write(line + "\n")
+
+    def equity_history(self) -> list[EquitySnapshot]:
+        """Every readable snapshot; a later one for the same date wins."""
+        if not self.equity_path.exists():
+            return []
+        history = []
+        for line in self.equity_path.read_text(encoding="utf-8").splitlines():
+            try:
+                item = json.loads(line)
+                history.append(EquitySnapshot(date.fromisoformat(item["date"]),
+                                              _stored_decimal(item["equity"], "equity"),
+                                              str(item["strategy_version"])))
+            except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+                continue
+        return history
+
+    def saved_gate(self) -> dict | None:
+        """The last live-gate verdict computed, or None if never computed or unreadable."""
+        try:
+            raw = json.loads(self.gate_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            return None
+        return raw if isinstance(raw, dict) else None
+
+    def save_gate(self, gate: dict) -> None:
+        self._write(self.gate_path, gate)
+
+    def auto_status(self) -> dict | None:
+        """The last paper-auto result, for the dashboard."""
+        try:
+            raw = json.loads((self.directory / "last_auto.json").read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            return None
+        return raw if isinstance(raw, dict) else None
+
+    def save_auto_status(self, status: dict) -> None:
+        self._write(self.directory / "last_auto.json", status)
+
     def latest_plan(self) -> dict | None:
         """The most recently written plan, verified like any plan being submitted."""
         paths = [path for path in self.plans_dir.glob("*.json")
@@ -235,6 +289,18 @@ class PaperStore:
         if not paths:
             return None
         return self.load_plan(max(paths, key=lambda path: path.stat().st_mtime).stem)
+
+
+# The code that decides trades. Editing any of it restarts the gate's forward count.
+DECISION_CODE = ("equity.py", "offline.py", "paper_rules.py")
+
+
+def decision_code_sha256() -> str:
+    digest = hashlib.sha256()
+    for name in DECISION_CODE:
+        digest.update(name.encode("utf-8"))
+        digest.update((Path(__file__).parent / name).read_bytes())
+    return digest.hexdigest()
 
 
 def _client_order_id(plan: dict) -> str:
@@ -327,14 +393,24 @@ def _send(client: BrokerClient, store: PaperStore, ledger: PaperLedger,
 
 # ----------------------------------------------------------------- commands
 
-def paper_status(client: BrokerClient, store: PaperStore) -> dict:
+def paper_status(client: BrokerClient, store: PaperStore,
+                 risk: LoadedRisk | None = None) -> dict:
     """Read-only view; writes nothing and never engages the kill switch."""
+    risk = risk or default_risk()
     account, clock = client.account(), client.clock()
     ledger, result = _reconciled(client, store, engage_on_mismatch=False)
     drawdown = measure_drawdown(ledger.peak_equity, account.equity,
-                                EquityConfig().max_drawdown_fraction)
+                                risk.config.max_drawdown_fraction)
+    daily = measure_daily_loss(account.last_equity, account.equity,
+                               risk.config.daily_loss_limit_fraction)
     return _jsonable({
         "mode": "alpaca_paper", "kill_switch": store.kill_switch(),
+        "risk": {"source": risk.source, "sha256": risk.sha256,
+                 "settings": {key: str(value) for key, value in asdict(risk.config).items()}},
+        "daily_loss": {"current_pct": None if daily.fraction is None
+                       else (daily.fraction * 100).quantize(Decimal("0.001")),
+                       "limit_pct": risk.config.daily_loss_limit_fraction * 100,
+                       "breached": daily.breached},
         "account": {"paper": account.is_paper_account, "status": account.status,
                     "cash": account.cash, "equity": account.equity,
                     "trading_blocked": account.trading_blocked},
@@ -352,8 +428,10 @@ def paper_status(client: BrokerClient, store: PaperStore) -> dict:
 
 
 def paper_plan(client: BrokerClient, store: PaperStore, source_bytes: bytes,
-               source_name: str, config: EquityConfig = EquityConfig()) -> dict:
+               source_name: str, risk: LoadedRisk | None = None) -> dict:
     """Decide tomorrow's GLD order from today's close; never sends it."""
+    risk = risk or default_risk()
+    config = risk.config.equity_config()
     _require_no_kill_switch(store)
     account, clock = _preflight(client)
     if clock.is_open:
@@ -379,16 +457,27 @@ def paper_plan(client: BrokerClient, store: PaperStore, source_bytes: bytes,
     signal = None if windows is None else sma_signal(bars, *windows)
     drawdown = measure_drawdown(ledger.peak_equity, account.equity,
                                 config.max_drawdown_fraction)
+    daily = measure_daily_loss(account.last_equity, account.equity,
+                               risk.config.daily_loss_limit_fraction)
     halt = ledger.drawdown_halt
     if halt is None and drawdown.breached:
         halt = DrawdownHalt(clock.timestamp.isoformat(), drawdown.peak_equity,
                             drawdown.equity, (drawdown.fraction * 100).quantize(Decimal("0.001")))
-    target = signal.strategy_target if signal is not None and halt is None else 0
+    # A daily-loss breach sells and skips one session; the next plan starts fresh.
+    target = (signal.strategy_target if signal is not None and halt is None
+              and not daily.breached else 0)
     planned = plan_order(target, reconciliation.broker_shares, account.cash, last.close,
-                         config.max_position_fraction, config.commission_per_order)
+                         config.max_position_fraction, config.commission_per_order,
+                         risk.config.buy_limit_buffer,
+                         volume_cap(bars, risk.config.max_volume_fraction))
     reason = ("DRAWDOWN_EXIT" if planned.action == "SELL" and halt is not None else
+              "DAILY_LOSS_EXIT" if planned.action == "SELL" and daily.breached else
               "SELECTION_GATE" if planned.action == "SELL" and signal is None else
+              "DAILY_LOSS_PAUSE" if planned.action == "NO_TRADE" and daily.breached
+              and signal is not None and signal.strategy_target and halt is None else
               planned.reason)
+    version = strategy_version(decision_code_sha256(), selected, risk.sha256)
+    store.record_equity(EquitySnapshot(last.date, account.equity, version))
     store.save_ledger(replace(ledger, peak_equity=drawdown.peak_equity, drawdown_halt=halt))
 
     plan = {
@@ -408,6 +497,15 @@ def paper_plan(client: BrokerClient, store: PaperStore, source_bytes: bytes,
                      "current_pct": str((drawdown.fraction * 100).quantize(Decimal("0.001"))),
                      "threshold_pct": str(config.max_drawdown_fraction * 100),
                      "halted": halt is not None},
+        "daily_loss": {"last_equity": None if daily.last_equity is None
+                       else str(daily.last_equity),
+                       "current_pct": None if daily.fraction is None
+                       else str((daily.fraction * 100).quantize(Decimal("0.001"))),
+                       "limit_pct": str(risk.config.daily_loss_limit_fraction * 100),
+                       "breached": daily.breached},
+        "risk": {"sha256": risk.sha256, "source": risk.source,
+                 "settings": {key: str(value) for key, value in asdict(risk.config).items()}},
+        "strategy_version": version,
         "position_before": reconciliation.broker_shares, "target": target,
         "action": planned.action, "reason": reason,
         "order": None if planned.action not in ("BUY", "SELL") else {
@@ -425,8 +523,11 @@ def paper_plan(client: BrokerClient, store: PaperStore, source_bytes: bytes,
                              if plan["order"] else None)}
 
 
-def paper_submit(client: BrokerClient, store: PaperStore, plan_id: str) -> dict:
+def paper_submit(client: BrokerClient, store: PaperStore, plan_id: str,
+                 approval: str = "manual") -> dict:
     """Send one approved plan's order, at most once, before its session opens."""
+    if approval not in APPROVALS:
+        raise ValueError(f"approval must be one of {APPROVALS}")
     _require_no_kill_switch(store)
     plan = store.load_plan(plan_id)
     details = plan.get("order")
@@ -460,7 +561,7 @@ def paper_submit(client: BrokerClient, store: PaperStore, plan_id: str) -> dict:
     record = LedgerOrder(client_order_id, plan_id, session, order.side, order.qty,
                          limit, SUBMITTING,
                          reference_close=Decimal(plan["data"]["reference_close"]),
-                         sent_at=clock.timestamp)
+                         sent_at=clock.timestamp, approval=approval)
     return _jsonable(_send(client, store, ledger, record, order))
 
 
@@ -508,13 +609,14 @@ def paper_resume(client: BrokerClient, store: PaperStore) -> dict:
 
 
 def paper_report(store: PaperStore, source_bytes: bytes, source_name: str,
-                 log_dir: Path = SETTINGS.log_dir,
-                 config: EquityConfig = EquityConfig()) -> dict:
+                 log_dir: Path = SETTINGS.log_dir, risk: LoadedRisk | None = None,
+                 include_gate: bool = False) -> dict:
     """Offline execution-quality report; reads local files only, never Alpaca.
 
     An order's session open comes from the Tiingo history, so a fill from today
     shows its open-based comparisons after the next import.
     """
+    config = (risk or default_risk()).config.equity_config()
     ledger = store.load_ledger()
     bars = parse_gld_csv(source_bytes, config)
     opens = {bar.date: bar.open for bar in bars}
@@ -528,11 +630,30 @@ def paper_report(store: PaperStore, source_bytes: bytes, source_name: str,
                 open_time = None
         session = SessionReference(opens.get(order.session), open_time)
         rows.append(order_quality(order, session, config.slippage_per_share))
-    return _jsonable({
+    summary = summarize_quality(rows)
+    report = {
         "mode": "alpaca_paper_execution_report",
         "data": {"source_name": source_name,
                  "sha256": hashlib.sha256(source_bytes).hexdigest(),
                  "last_date": bars[-1].date},
-        "summary": summarize_quality(rows), "runs": summarize_runs(read_runs(log_dir)),
-        "orders": rows})
+        "summary": summary, "runs": summarize_runs(read_runs(log_dir)),
+        "orders": rows}
+    if include_gate:
+        report["live_gate"] = live_gate_report(store, source_bytes, source_name, summary,
+                                               risk or default_risk())
+    return _jsonable(report)
+
+
+def live_gate_report(store: PaperStore, source_bytes: bytes, source_name: str,
+                     quality_summary: dict, risk: LoadedRisk) -> dict:
+    """Both ADR-008 stages from local files, saved so the dashboard can show it."""
+    report = run_gld_csv(source_bytes, source_name, config=risk.config.equity_config())
+    closes = {bar.date: bar.close for bar in parse_gld_csv(source_bytes,
+                                                            risk.config.equity_config())}
+    gate = verdict(research_gate(report["evaluation"]),
+                   forward_gate(store.equity_history(), closes, _jsonable(quality_summary)))
+    gate = _jsonable({**gate, "data_last_date": report["data"]["last_date"],
+                      "data_sha256": report["data"]["sha256"]})
+    store.save_gate(gate)
+    return gate
 

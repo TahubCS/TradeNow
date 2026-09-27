@@ -11,6 +11,7 @@ from pathlib import Path
 
 from .equity import EquityBar, EquityConfig, simulate_equity, validate_equity_bars
 from .gld_evaluation import evaluate_gld
+from .live_gate import research_gate, verdict
 from .offline import CANDIDATES, evaluate_candidates
 from .tiingo import PRIVATE_DIR
 
@@ -124,6 +125,8 @@ def run_gld_csv(source_bytes: bytes, filename: str = "GLD.csv",
                          "holdout_result": holdout,
                          "holdout_summary": _summary(holdout)},
             "evaluation": evaluation,
+            # Research stage only: forward paper evidence comes from paper-report.
+            "live_gate": verdict(research_gate(evaluation), None),
             "limits": ["provider prices are not independently verified",
                        "daily bars cannot verify intraday execution or market impact",
                        "simulated fills and slippage only", "cash-funded long positions only",
@@ -149,6 +152,18 @@ def latest_imported_gld(directory: Path = PRIVATE_DIR) -> tuple[bytes, str]:
     return source_bytes, csv_path.name
 
 
+def _gate_markdown(gate: dict) -> list[str]:
+    rows = [f"## Live-trading gate (ADR-008): **{gate['verdict']}**", "", gate["meaning"], "",
+            "| Check | Result | Detail |", "| --- | --- | --- |"]
+    for stage in (gate["research"], gate["forward"]):
+        for item in (stage or {}).get("checks", []):
+            rows.append(f"| {item['check']} | {'pass' if item['passed'] else 'FAIL'} | "
+                        f"{item['detail']} |")
+    if gate["forward"] is None:
+        rows.append("| F1-F4 forward paper stage | not evaluated here | see paper-report |")
+    return rows + [""]
+
+
 def render_gld_markdown(report: dict) -> str:
     data = report["data"]
     research = report["research"]
@@ -162,6 +177,7 @@ def render_gld_markdown(report: dict) -> str:
         f"Data SHA-256: `{data['sha256']}`  ",
         f"Code SHA-256: `{report['code_sha256']}`  ",
         f"Selected: **{research['selected_hypothesis'] or 'NO TRADE'}**", "",
+        *_gate_markdown(report["live_gate"]),
         "The fixed candidates were selected using chronological validation only.",
         "The holdout was not used to choose a strategy. Each period starts flat.", "",
         "## Holdout", "",

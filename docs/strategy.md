@@ -25,6 +25,11 @@ Initial candidates:
 
 These baselines are useful even if they are not profitable because they verify that the research and backtesting stack behaves correctly.
 
+No strategy trades real money unless it passes the live-trading gate in
+ADR-008: it must beat plain buy-and-hold out of sample, after costs, over
+enough trades, historically and in a year of forward paper trading. Until one
+does, a low-cost index fund or simply holding GLD is expected to do better.
+
 ## Strategy Interface
 
 ```python

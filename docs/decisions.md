@@ -188,6 +188,137 @@ reproduced from the files it names.
 
 ---
 
+## ADR-008 — Live-Trading Gate: Beat Buy-and-Hold First
+
+**Status:** Accepted
+
+### Context
+
+A strategy that loses to simply holding the asset is worse than doing nothing,
+and a backtest can look good by chance or by selection. The current GLD SMA
+strategy returned +32% on its holdout against +63% for 50% buy-and-hold, and
+beat that benchmark in only 10 of 29 rolling windows. Real money must be
+protected from strategies like that.
+
+### Decision
+
+**No real money is traded unless a strategy passes every check below.** Until
+then, a low-cost index fund or simply holding GLD is the better choice, and
+this system stays a research and paper-trading tool.
+
+The gate is evaluated automatically (`tradenow/live_gate.py`). Its verdict
+appears in the `gld` report, `paper-report`, the dashboard, and every
+`paper-auto` run, and a desktop notification is sent whenever the verdict
+changes.
+
+**Research stage.** Historical and out of sample: only rolling test windows
+whose strategy was selected from earlier bars count.
+
+| Check | Requirement |
+|---|---|
+| R1 Beats full buy-and-hold | Compounded strategy return across all rolling test windows exceeds compounded 100% GLD buy-and-hold over the same windows |
+| R2 Beats consistently | Beats buy-and-hold at the same exposure cap in at least 60% of rolling windows |
+| R3 Enough trades | At least 30 closed round trips across the rolling test windows |
+| R4 Survives costs | R1 still holds with slippage raised to $0.10 per share |
+
+**Forward stage.** Truly unseen: paper trading after the strategy is frozen.
+Only the latest unbroken run of paper sessions with the same strategy version
+counts. The version is the hash of the strategy code, the selected hypothesis,
+and the risk settings, so changing any of them restarts the count.
+
+| Check | Requirement |
+|---|---|
+| F1 Long enough | At least 252 paper sessions (about one year) |
+| F2 Beats full buy-and-hold | Paper equity return exceeds 100% GLD buy-and-hold over the same sessions |
+| F3 No worse risk | Paper maximum drawdown no larger than buy-and-hold's |
+| F4 Costs as modeled | Mean fill cost against the simulated fill of at most 10 bps, over at least 10 fills |
+
+### What a pass means
+
+A pass is permission to consider live trading, not an instruction to start.
+Live trading still requires the Phase 10 prerequisites, a separate decision
+recorded here, and minimal capital at first. No live mode exists in the code,
+and the gate never enables one.
+
+### Rules that protect the gate
+
+- Thresholds may be tightened, never loosened, without a new ADR that states
+  why, written before looking at the results it would change.
+- The final GLD holdout has already been viewed, so it never counts as evidence.
+- A strategy that fails may be changed and re-tested, but the forward stage
+  starts again from zero.
+
+### Consequences
+
+- The current strategy fails R1 to R3, so it stays in paper trading.
+- Most strategies are expected to fail. That is the gate working, not a fault.
+
+---
+
+## ADR-009 — Automated Paper Submission (paper-auto)
+
+**Status:** Accepted. Supersedes ADR-006's per-order approval for the paper
+account only.
+
+### Context
+
+Phase 6's exit condition is unattended paper trading without state
+inconsistencies. ADR-006 required a person to approve every order until paper
+history showed stable behavior.
+
+### Decision
+
+`python -m tradenow paper-auto` runs on a Windows Task Scheduler schedule and
+reuses the manual path unchanged: kill switch, reconciliation, the Tiingo and
+Alpaca data cross-check, risk checks, the saved plan, and the at-most-once
+submission. Only the approval step changes: `auto_submit` in `risk.toml`
+replaces the person. Each order records whether a person or paper-auto
+approved it.
+
+- **Risk settings** live in `risk.toml`, with hard ceilings in code
+  (`tradenow/risk_config.py`). An unknown key, a wrong type, a value outside
+  its range, or a file that does not parse stops the run. A missing file means
+  the defaults, with `auto_submit = false`.
+- **Daily loss limit:** a loss since the previous close (Alpaca's
+  `last_equity`) at or above the limit sells at the next open and skips one
+  session; buying resumes by itself after that. An unknown baseline blocks
+  buys (fail closed). The 10% drawdown halt is unchanged and needs
+  `paper-resume`.
+- **Volume check:** buys are capped at a fraction of the 20-day average volume.
+  Exits are never reduced.
+- **One run at a time**, enforced by a lock file; a lock older than two hours
+  is treated as left by a crash.
+- **Morning check** (`--check`) reconciles and reports fills; it never trades.
+- **Notifications** are Windows desktop toasts. They are sent through
+  PowerShell at its absolute system path, with a fixed script. The text is
+  passed in environment variables and never in the command, credentials are
+  stripped from the child's environment, and each notice is sent at most
+  once a day.
+- **Rollout:** start with `auto_submit = false` (a dry run that plans and
+  notifies) alongside manual approval for about 5 sessions, then turn it on.
+
+### Alternatives Considered
+
+- Keeping manual approval permanently: rejected, because it cannot meet the
+  Phase 6 exit condition.
+- Cloud scheduling (GitHub Actions): rejected for now. The ledger and imports
+  are local files (ADR-007), and credentials would move to a third party.
+  Revisit when the system moves off this PC, starting with an ADR on storing
+  keys in the operating system's credential store.
+- Broker-side stop orders: deferred. The backtest does not model stops, so
+  paper results would stop matching it.
+
+### Consequences
+
+- The PC must be on and logged in during the evening window.
+- Phase 6 passes after 20 consecutive unattended sessions with no
+  reconciliation failures and no manual repairs, per the run log and
+  `paper-report`.
+- Automation does not change the live-trading gate (ADR-008). No live mode
+  exists.
+
+---
+
 ## ADR Template
 
 ### ADR-XXX — Title
