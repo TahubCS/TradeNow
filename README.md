@@ -1,7 +1,8 @@
 # Tradenow
 
-This is an **offline research workflow** for Micro Gold-shaped daily bars. By
-default it generates a fictional contract (`MGC_SIM`), validates its bars,
+This is an **offline research workflow** for gold markets: synthetic Micro Gold
+futures bars and locally imported GLD ETF history. By default it generates a
+fictional contract (`MGC_SIM`), validates its bars,
 evaluates fixed trade hypotheses, selects one on validation data, and replays the
 holdout period through proposals, risk checks, a simulated order manager, and
 portfolio accounting. It cannot submit brokerage orders or contact Databento.
@@ -38,9 +39,21 @@ automatically. It checks ticker coverage, validates daily bars, and saves raw
 JSON, a CSV containing raw and adjusted prices, and a source manifest under
 `data/private/tiingo/`. Repeating the same date range stops before any API
 request. The key is sent in an authorization header and never written to the
-data files. The GLD share simulator currently accepts local bars in Python;
-connecting these imported bars to the research CLI and dashboard is the next
-step.
+data files. The import command does not run a backtest or contact a broker.
+
+Replay the newest private import without another Tiingo request:
+
+```powershell
+python -m tradenow gld
+```
+
+Use `python -m tradenow gld --data path/to/GLD.csv` for another local Tiingo-format
+CSV. GLD research uses the same fixed candidates and chronological
+development/validation/holdout selection as the MGC workflow, with cash-funded
+whole shares, raw prices, and a share-based risk cap. It rejects files with
+dividends, splits, or adjusted prices that differ from raw prices until those
+cash flows are modeled. Reports go to `artifacts/gld/`; downloaded bars stay
+under `data/private/`. Historical results do not establish expected returns.
 
 ## Local dashboard
 
@@ -52,11 +65,12 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m tradenow web
 ```
 
-Visit `http://127.0.0.1:8000`. The server binds to your computer only. It runs
-the same research cycle on generated bars or a CSV selected in the browser and
-displays price and equity charts, candidate selection, fills, unfilled orders,
-contract transitions, risk decisions,
-and the stress suite. Browser-selected files are sent only to the local server,
+Visit `http://127.0.0.1:8000`. The server binds to your computer only. Use
+**Replay imported GLD** to display the latest saved Tiingo import without
+another API request, or select a local MGC or GLD CSV. The dashboard displays
+price and equity charts, candidate selection, fills, unfilled orders, and risk
+decisions. MGC runs also show contract transitions and the stress suite.
+Browser-selected files are sent only to the local server,
 analyzed in memory, and not saved by the dashboard. There are no brokerage
 endpoints, Databento calls, or remote assets. The API limits file sizes, seeds,
 and bar counts so accidental requests remain bounded. Stop

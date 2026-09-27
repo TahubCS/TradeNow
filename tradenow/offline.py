@@ -77,42 +77,43 @@ def run_local_csv(source_bytes: bytes, filename: str = "local.csv",
                          source_name=safe_name), source_bytes
 
 
+def evaluate_candidates(bars: list, base_config: object, simulator) -> tuple:
+    """Apply the same chronological selection gate to either instrument."""
+    days = len(bars)
+    development_end = days * 3 // 5
+    validation_end = days * 4 // 5
+    periods = {"development": bars[:development_end],
+               "validation": bars[development_end:validation_end],
+               "holdout": bars[validation_end:]}
+    hypotheses = []
+    best_score: Decimal | None = None
+    best_config = None
+    best_name = None
+    for name, fast, slow in CANDIDATES:
+        config = replace(base_config, fast_window=fast, slow_window=slow)
+        development = simulator(periods["development"], config)
+        validation = simulator(periods["validation"], config)
+        score = (Decimal(validation["total_return_pct"])
+                 - Decimal(validation["max_drawdown_pct"]))
+        hypotheses.append({"name": name,
+                           "parameters": {"fast_window": fast, "slow_window": slow},
+                           "development": development, "validation": validation,
+                           "validation_score": str(score)})
+        if best_score is None or score > best_score:
+            best_score, best_config, best_name = score, config, name
+    assert best_score is not None and best_config is not None
+    selected = best_name if best_score > 0 else None
+    holdout = simulator(periods["holdout"],
+                        replace(best_config, enable_entries=selected is not None))
+    return periods, hypotheses, selected, best_score, holdout
+
+
 def _run_research(bars: list[Bar], source_bytes: bytes, source: str, base_config: Config,
                   seed: int | None = None, source_name: str | None = None) -> dict:
     days = len(bars)
     contracts = list(dict.fromkeys(bar.contract for bar in bars))
-    development_end = days * 3 // 5
-    validation_end = days * 4 // 5
-    periods = {
-        "development": bars[:development_end],
-        "validation": bars[development_end:validation_end],
-        "holdout": bars[validation_end:],
-    }
-
-    hypotheses = []
-    best_score: Decimal | None = None
-    best_config: Config | None = None
-    best_name: str | None = None
-    for name, fast, slow in CANDIDATES:
-        config = replace(base_config, fast_window=fast, slow_window=slow)
-        development = simulate(periods["development"], config)
-        validation = simulate(periods["validation"], config)
-        score = (Decimal(validation["total_return_pct"])
-                 - Decimal(validation["max_drawdown_pct"]))
-        hypotheses.append({
-            "name": name,
-            "parameters": {"fast_window": fast, "slow_window": slow},
-            "development": development,
-            "validation": validation,
-            "validation_score": str(score),
-        })
-        if best_score is None or score > best_score:
-            best_score, best_config, best_name = score, config, name
-
-    assert best_score is not None and best_config is not None
-    selected = best_name if best_score > 0 else None
-    test_config = replace(best_config, enable_entries=selected is not None)
-    holdout = simulate(periods["holdout"], test_config)
+    periods, hypotheses, selected, best_score, holdout = evaluate_candidates(
+        bars, base_config, simulate)
     data_hash = hashlib.sha256(source_bytes).hexdigest()
     code_digest = hashlib.sha256()
     for name in ("market_data.py", "synthetic.py", "simulation.py", "execution.py", "offline.py"):

@@ -29,7 +29,7 @@ class EquityConfig:
     enable_entries: bool = True
 
 
-def _validate(bars: list[EquityBar], config: EquityConfig) -> None:
+def validate_equity_bars(bars: list[EquityBar], config: EquityConfig) -> None:
     if not 0 < config.fast_window < config.slow_window:
         raise ValueError("Expected 0 < fast_window < slow_window")
     if len(bars) < config.slow_window + 1:
@@ -60,7 +60,7 @@ def _validate(bars: list[EquityBar], config: EquityConfig) -> None:
 
 def simulate_equity(bars: list[EquityBar], config: EquityConfig = EquityConfig()) -> dict:
     """Compute signals at each close and fill approved whole-share orders next open."""
-    _validate(bars, config)
+    validate_equity_bars(bars, config)
     cash = config.starting_cash
     shares = 0
     entry_price: Decimal | None = None
@@ -70,6 +70,7 @@ def simulate_equity(bars: list[EquityBar], config: EquityConfig = EquityConfig()
     peak_equity = cash
     max_drawdown = Decimal(0)
     signals: list[dict] = []
+    proposals: list[dict] = []
     risk_decisions: list[dict] = []
     fills: list[dict] = []
     closed_trades: list[dict] = []
@@ -156,6 +157,13 @@ def simulate_equity(bars: list[EquityBar], config: EquityConfig = EquityConfig()
             signals.append({"date": day, "strategy_target": strategy_target,
                             "target": target, "fast_sma": str(fast_average),
                             "slow_sma": str(slow_average)})
+            proposed_action = ("BUY" if target and not shares else
+                               "SELL" if not target and shares else "NO_TRADE")
+            proposals.append({"date": day, "action": proposed_action,
+                              "target_position": target,
+                              "reason": ("DRAWDOWN_HALT" if halted else
+                                         "SELECTION_GATE" if not config.enable_entries else
+                                         "STRATEGY_SIGNAL")})
 
     total_pnl = equity - config.starting_cash
     return {"mode": "offline_equity_simulation", "symbol": "GLD", "bars": len(bars),
@@ -165,6 +173,7 @@ def simulate_equity(bars: list[EquityBar], config: EquityConfig = EquityConfig()
                                     .quantize(Decimal("0.001"))),
             "max_drawdown_pct": str((max_drawdown * 100).quantize(Decimal("0.001"))),
             "open_shares": shares, "halted": halted, "signals": signals,
+            "proposals": proposals,
             "risk_decisions": risk_decisions, "fills": fills,
             "unfilled_orders": unfilled_orders, "closed_trades": closed_trades,
             "equity_curve": equity_curve}

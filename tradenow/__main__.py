@@ -10,6 +10,8 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from .market_data import load_bars
+from .gld_research import (MAX_GLD_CSV_BYTES, latest_imported_gld, run_gld_csv,
+                           save_gld_report)
 from .offline import MAX_LOCAL_CSV_BYTES, run_local_csv, run_offline, save_offline
 from .simulation import Config, simulate
 from .stress import run_stress, save_stress
@@ -113,6 +115,35 @@ def tiingo_main(argv: list[str]) -> int:
     return 0
 
 
+def gld_main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(description="Replay private GLD daily bars offline")
+    parser.add_argument("--data", type=Path, help="GLD CSV; defaults to latest Tiingo import")
+    parser.add_argument("--output", type=Path, default=Path("artifacts/gld"))
+    args = parser.parse_args(argv)
+    try:
+        if args.data:
+            if args.data.stat().st_size > MAX_GLD_CSV_BYTES:
+                raise ValueError(f"GLD CSV exceeds {MAX_GLD_CSV_BYTES} bytes")
+            source_bytes, filename = args.data.read_bytes(), args.data.name
+            source = "local_gld_csv"
+        else:
+            source_bytes, filename = latest_imported_gld()
+            source = "tiingo_eod_import"
+        report = run_gld_csv(source_bytes, filename, source=source)
+        json_path, md_path = save_gld_report(report, args.output)
+    except (OSError, ValueError, InvalidOperation) as error:
+        print(f"Error: {error}", file=sys.stderr)
+        return 1
+    print(json.dumps({"mode": report["mode"], "run_id": report["run_id"],
+                      "symbol": "GLD", "bars": report["data"]["bars"],
+                      "source_sha256": report["data"]["sha256"],
+                      "selected_hypothesis": report["research"]["selected_hypothesis"],
+                      "holdout_summary": report["research"]["holdout_summary"],
+                      "report_file": str(json_path.resolve()),
+                      "readable_report": str(md_path.resolve())}, indent=2))
+    return 0
+
+
 def main() -> int:
     if len(sys.argv) > 1 and sys.argv[1] == "offline":
         return offline_main(sys.argv[2:])
@@ -122,10 +153,12 @@ def main() -> int:
         return web_main(sys.argv[2:])
     if len(sys.argv) > 1 and sys.argv[1] == "tiingo-import":
         return tiingo_main(sys.argv[2:])
+    if len(sys.argv) > 1 and sys.argv[1] == "gld":
+        return gld_main(sys.argv[2:])
 
     parser = argparse.ArgumentParser(
         description="Replay local MGC bars without network or broker access",
-        epilog="Use 'offline', 'stress', 'web', or 'tiingo-import' for the research tools.",
+        epilog="Use 'gld', 'offline', 'stress', 'web', or 'tiingo-import' for the research tools.",
     )
     parser.add_argument("--data", type=Path,
                         default=Path(__file__).resolve().parent.parent / "sample_data" / "mgc_synthetic.csv",

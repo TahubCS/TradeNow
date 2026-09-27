@@ -1,8 +1,10 @@
 import json
 import unittest
+from unittest.mock import patch
 
 from tradenow.web import app
 from tradenow.synthetic import bars_to_csv, generate_bars
+from tests.test_gld_research import sample_gld_csv
 
 
 async def request(path: str, query: str = "", method: str = "GET", body: bytes = b"",
@@ -79,3 +81,28 @@ class WebTests(unittest.IsolatedAsyncioTestCase):
                                      "POST", b"x" * 1_000_001, headers)
         self.assertEqual(status, 400)
         self.assertIn("exceeds", json.loads(body)["error"])
+
+    async def test_private_gld_replay_and_local_gld_upload(self):
+        source = sample_gld_csv()
+        with patch("tradenow.web.latest_imported_gld",
+                   return_value=(source, "GLD-fixture.csv")):
+            status, _ = await request("/api/simulation/gld")
+            self.assertEqual(status, 403)
+            status, body = await request("/api/simulation/gld",
+                                         headers=[(b"host", b"127.0.0.1:8000")])
+        self.assertEqual(status, 200)
+        result = json.loads(body)
+        self.assertEqual(result["mode"], "offline_gld_simulation")
+        self.assertEqual(result["data"]["source"], "tiingo_eod_import")
+        self.assertEqual(result["data"]["bars"], 180)
+        self.assertEqual(len(result["prices"]), 36)
+        self.assertIn("open_shares", result["holdout_summary"])
+        self.assertTrue(all(fill["symbol"] == "GLD" for fill in result["fills"]))
+
+        headers = [(b"host", b"127.0.0.1:8000"),
+                   (b"origin", b"http://127.0.0.1:8000"),
+                   (b"content-type", b"text/csv")]
+        status, body = await request("/api/simulation/local", "filename=GLD.csv",
+                                     "POST", source, headers)
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["data"]["source"], "local_gld_csv")

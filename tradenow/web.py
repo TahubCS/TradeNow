@@ -8,7 +8,8 @@ from io import StringIO
 from pathlib import Path
 from urllib.parse import parse_qs
 
-from .offline import MAX_LOCAL_CSV_BYTES, run_local_csv, run_offline
+from .gld_research import MAX_GLD_CSV_BYTES, latest_imported_gld, run_gld_csv
+from .offline import run_local_csv, run_offline
 from .stress import run_stress
 
 
@@ -35,8 +36,37 @@ def simulation_view(seed: int, days: int) -> dict:
 
 
 def local_simulation_view(source_bytes: bytes, filename: str) -> dict:
+    if source_bytes.removeprefix(b"\xef\xbb\xbf").startswith(b"date,symbol,"):
+        return gld_simulation_view(source_bytes, filename)
     report, _ = run_local_csv(source_bytes, filename)
     return _report_view(report, source_bytes.decode("utf-8-sig"))
+
+
+def gld_simulation_view(source_bytes: bytes, filename: str,
+                        source: str = "local_gld_csv") -> dict:
+    report = run_gld_csv(source_bytes, filename, source=source)
+    research = report["research"]
+    first_holdout = report["data"]["periods"]["holdout"]["first_date"]
+    prices = [{"date": row["date"], "close": float(row["close"]),
+               "contract": "GLD"}
+              for row in csv.DictReader(StringIO(source_bytes.decode("utf-8-sig")))
+              if row["date"] >= first_holdout]
+    candidates = [{"name": item["name"],
+                   "development_pnl": item["development"]["total_pnl"],
+                   "validation_pnl": item["validation"]["total_pnl"],
+                   "validation_score": item["validation_score"]}
+                  for item in research["hypotheses"]]
+    holdout = research["holdout_result"]
+    return {"mode": report["mode"], "run_id": report["run_id"],
+            "config": report["config"], "data": report["data"],
+            "days": report["data"]["bars"], "periods": report["data"]["periods"],
+            "selected_hypothesis": research["selected_hypothesis"],
+            "candidates": candidates, "holdout_summary": research["holdout_summary"],
+            "prices": prices, "equity_curve": holdout["equity_curve"],
+            "fills": holdout["fills"], "risk_decisions": holdout["risk_decisions"],
+            "proposals": holdout["proposals"],
+            "unfilled_orders": holdout["unfilled_orders"], "rolls": [],
+            "open_contract": None}
 
 
 def _report_view(report: dict, csv_text: str) -> dict:
@@ -75,8 +105,8 @@ async def _read_csv(receive) -> bytes:
             raise ValueError("Upload interrupted")
         chunk = message.get("body", b"")
         size += len(chunk)
-        if size > MAX_LOCAL_CSV_BYTES:
-            raise ValueError(f"Local CSV exceeds {MAX_LOCAL_CSV_BYTES} bytes")
+        if size > MAX_GLD_CSV_BYTES:
+            raise ValueError(f"Local CSV exceeds {MAX_GLD_CSV_BYTES} bytes")
         chunks.append(chunk)
         if not message.get("more_body", False):
             return b"".join(chunks)
@@ -138,6 +168,15 @@ async def app(scope, receive, send) -> None:
             seed = _number(params, "seed", 3, 0, 1_000_000)
             days = _number(params, "days", 360, 180, 1000)
             payload = await asyncio.to_thread(simulation_view, seed, days)
+        elif path == "/api/simulation/gld":
+            host = dict(scope.get("headers", [])).get(b"host", b"").decode("ascii", errors="ignore")
+            if not re.fullmatch(r"127\.0\.0\.1(?::\d{1,5})?", host):
+                await _respond(send, 403, b'{"error":"GLD data is local only"}',
+                               b"application/json")
+                return
+            source_bytes, filename = await asyncio.to_thread(latest_imported_gld)
+            payload = await asyncio.to_thread(gld_simulation_view, source_bytes, filename,
+                                              "tiingo_eod_import")
         elif path == "/api/stress":
             seeds = _number(params, "seeds", 12, 1, 32)
             days = _number(params, "days", 360, 180, 1000)
@@ -145,7 +184,7 @@ async def app(scope, receive, send) -> None:
         else:
             await _respond(send, 404, b'{"error":"Not found"}', b"application/json")
             return
-    except (UnicodeDecodeError, ValueError) as error:
+    except (OSError, UnicodeDecodeError, ValueError) as error:
         await _respond(send, 400, json.dumps({"error": str(error)}).encode(),
                        b"application/json")
         return
