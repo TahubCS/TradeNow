@@ -55,6 +55,11 @@ dividends, splits, or adjusted prices that differ from raw prices until those
 cash flows are modeled. Reports go to `artifacts/gld/`; downloaded bars stay
 under `data/private/`. Historical results do not establish expected returns.
 
+The GLD 10% drawdown threshold checks closing equity, blocks new entries after
+a breach, and requests a sale at the next tradable open. It is not a guaranteed
+stop: gaps or blocked fills can push drawdown beyond 10%, and a final-bar breach
+leaves an exit pending. Reports and the dashboard show the trigger and exit state.
+
 The GLD report compares the selected holdout strategy with cash and buy-and-hold
 at 50% and 100% allocation. It reports calendar-time annualized returns, gross
 traded notional relative to starting cash, and holdout results with $0.01,

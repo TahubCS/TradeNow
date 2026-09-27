@@ -81,7 +81,8 @@ def _summary(result: dict) -> dict:
             "no_trade_days": sum(item["action"] == "NO_TRADE"
                                  for item in result["proposals"]),
             "warmup_bars": len(result["equity_curve"]) - len(result["signals"]),
-            "halted": result["halted"], "open_shares": result["open_shares"]}
+            "halted": result["halted"], "open_shares": result["open_shares"],
+            "drawdown_halt": result["drawdown_halt"]}
 
 
 def run_gld_csv(source_bytes: bytes, filename: str = "GLD.csv",
@@ -125,7 +126,8 @@ def run_gld_csv(source_bytes: bytes, filename: str = "GLD.csv",
             "evaluation": evaluation,
             "limits": ["provider prices are not independently verified",
                        "daily bars cannot verify intraday execution or market impact",
-                       "simulated fills and slippage only", "cash-funded long positions only"]}
+                       "simulated fills and slippage only", "cash-funded long positions only",
+                       "drawdown threshold checks closing equity and requests an exit at the next tradable open; it does not cap losses"]}
 
 
 def latest_imported_gld() -> tuple[bytes, str]:
@@ -169,6 +171,8 @@ def render_gld_markdown(report: dict) -> str:
         f"- Closed trades: {summary['closed_trades']}; fills: {summary['fills']}",
         f"- Exposure: {summary['exposure_pct']}%; open shares: {summary['open_shares']}",
         f"- Rejected orders: {summary['rejected_orders']}; halted: {summary['halted']}", "",
+        "The drawdown threshold checks closing equity. Once breached, it blocks new entries",
+        "and requests an exit at the next tradable open; it does not cap losses.",
         "Raw GLD prices are used for signals, fills, and marking equity.",
         "Cash-funded whole-share positions only; no futures margin or rolls.",
         "Daily bars and simulated fills do not establish live execution quality.",
@@ -177,6 +181,14 @@ def render_gld_markdown(report: dict) -> str:
         "| Portfolio | Return | Annualized | Max drawdown |",
         "| --- | ---: | ---: | ---: |",
     ]
+    halt = summary["drawdown_halt"]
+    if halt is not None:
+        status = (f"exit filled {halt['exit_date']} at ${halt['exit_price']}" if halt["exit_date"]
+                  else "exit pending at the end of the data" if halt["exit_pending"]
+                  else "flat when triggered")
+        rows.insert(rows.index("Raw GLD prices are used for signals, fills, and marking equity."),
+            f"Halt triggered {halt['trigger_date']} at {halt['trigger_drawdown_pct']}% "
+            f"drawdown ({halt['shares_at_trigger']} shares); {status}.")
     for label, key in (("Selected strategy", "strategy"),
                        ("Buy and hold, 50% allocation", "buy_hold_50pct"),
                        ("Buy and hold, 100% allocation", "buy_hold_100pct"),

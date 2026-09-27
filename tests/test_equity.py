@@ -45,6 +45,7 @@ class EquityTests(unittest.TestCase):
         self.assertEqual(result["ending_cash"], "60.97")
         self.assertEqual(result["ending_equity"], "102.97")
         self.assertEqual(result["fills"][0]["price"], "13.01")
+        self.assertIsNone(result["drawdown_halt"])
 
     def test_rejects_unaffordable_and_over_limit_purchase(self):
         bars = gld_bars([10, 11, 12, 13, 14])
@@ -79,6 +80,37 @@ class EquityTests(unittest.TestCase):
         self.assertEqual([fill["side"] for fill in result["fills"]], ["BUY", "SELL"])
         self.assertTrue(any(decision["reason"] == "DRAWDOWN_LIMIT"
                             for decision in result["risk_decisions"]))
+
+    def test_drawdown_exit_can_fill_below_threshold_after_overnight_gap(self):
+        bars = gld_bars([10, 11, 12, 13, 14, 10, 7, 6])
+        config = EquityConfig(starting_cash=Decimal("100"), fast_window=2, slow_window=3)
+        result = simulate_equity(bars, config)
+        halt = result["drawdown_halt"]
+        self.assertEqual(halt["trigger_date"], bars[5].date.isoformat())
+        self.assertEqual(halt["exit_date"], bars[6].date.isoformat())
+        self.assertEqual(halt["exit_price"], "6.99")
+        self.assertFalse(halt["exit_pending"])
+        self.assertGreater(Decimal(result["max_drawdown_pct"]), Decimal("10"))
+        self.assertEqual(result["risk_decisions"][-1]["reason"], "DRAWDOWN_EXIT")
+
+    def test_drawdown_exit_retries_after_zero_volume(self):
+        bars = gld_bars([10, 11, 12, 13, 14, 10, 7, 6])
+        bars[6] = replace(bars[6], volume=0)
+        result = simulate_equity(bars, EquityConfig(starting_cash=Decimal("100"),
+                                                     fast_window=2, slow_window=3))
+        self.assertEqual(result["unfilled_orders"][-1]["reason"], "ZERO_VOLUME")
+        self.assertEqual(result["drawdown_halt"]["exit_date"], bars[7].date.isoformat())
+        self.assertFalse(result["drawdown_halt"]["exit_pending"])
+
+    def test_final_bar_drawdown_leaves_exit_pending(self):
+        bars = gld_bars([10, 11, 12, 13, 14, 10])
+        result = simulate_equity(bars, EquityConfig(starting_cash=Decimal("100"),
+                                                     fast_window=2, slow_window=3))
+        self.assertEqual(result["drawdown_halt"]["trigger_date"],
+                         bars[-1].date.isoformat())
+        self.assertIsNone(result["drawdown_halt"]["exit_date"])
+        self.assertTrue(result["drawdown_halt"]["exit_pending"])
+        self.assertGreater(result["open_shares"], 0)
 
     def test_zero_volume_blocks_fill_and_retries_next_day(self):
         bars = gld_bars([10, 11, 12, 13, 14])

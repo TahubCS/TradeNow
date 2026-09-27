@@ -97,6 +97,7 @@ class WebTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["data"]["bars"], 180)
         self.assertEqual(len(result["prices"]), 36)
         self.assertIn("open_shares", result["holdout_summary"])
+        self.assertIn("drawdown_halt", result["holdout_summary"])
         self.assertIn("buy_hold_50pct", result["evaluation"]["holdout"])
         self.assertTrue(all(fill["symbol"] == "GLD" for fill in result["fills"]))
 

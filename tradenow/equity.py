@@ -67,6 +67,7 @@ def simulate_equity(bars: list[EquityBar], config: EquityConfig = EquityConfig()
     entry_date: str | None = None
     target = 0
     halted = False
+    drawdown_halt: dict | None = None
     peak_equity = cash
     max_drawdown = Decimal(0)
     signals: list[dict] = []
@@ -128,22 +129,35 @@ def simulate_equity(bars: list[EquityBar], config: EquityConfig = EquityConfig()
                 entry_price = None
                 entry_date = None
                 risk_decisions.append({"date": day, "action": action,
-                                       "approved": True, "reason": "CLOSE_POSITION",
+                                       "approved": True,
+                                       "reason": ("DRAWDOWN_EXIT" if halted else "CLOSE_POSITION"),
                                        "shares": quantity})
                 fills.append({"order_id": f"{day}-SELL", "date": day,
                               "side": action, "symbol": "GLD",
                               "price": str(price), "shares": quantity})
+                if halted:
+                    drawdown_halt["exit_date"] = day
+                    drawdown_halt["exit_price"] = str(price)
 
         if sum(fill["shares"] * (1 if fill["side"] == "BUY" else -1)
                for fill in fills) != shares:
             raise RuntimeError("GLD position does not match fill ledger")
         equity = cash + shares * bar.close
         peak_equity = max(peak_equity, equity)
-        max_drawdown = max(max_drawdown, (peak_equity - equity) / peak_equity)
+        current_drawdown = (peak_equity - equity) / peak_equity
+        max_drawdown = max(max_drawdown, current_drawdown)
         equity_curve.append({"date": day, "cash": str(cash), "equity": str(equity),
                              "position_shares": shares})
-        if max_drawdown >= config.max_drawdown_fraction and not halted:
+        if current_drawdown >= config.max_drawdown_fraction and not halted:
             halted = True
+            drawdown_halt = {
+                "threshold_pct": str(config.max_drawdown_fraction * 100),
+                "trigger_date": day,
+                "trigger_drawdown_pct": str((current_drawdown * 100).quantize(Decimal("0.001"))),
+                "shares_at_trigger": shares,
+                "exit_date": None,
+                "exit_price": None,
+            }
             risk_decisions.append({"date": day, "action": "HALT_NEW_ENTRIES",
                                    "approved": False, "reason": "DRAWDOWN_LIMIT"})
 
@@ -166,13 +180,16 @@ def simulate_equity(bars: list[EquityBar], config: EquityConfig = EquityConfig()
                                          "STRATEGY_SIGNAL")})
 
     total_pnl = equity - config.starting_cash
+    if drawdown_halt is not None:
+        drawdown_halt["exit_pending"] = shares > 0
     return {"mode": "offline_equity_simulation", "symbol": "GLD", "bars": len(bars),
             "starting_cash": str(config.starting_cash), "ending_cash": str(cash),
             "ending_equity": str(equity), "total_pnl": str(total_pnl),
             "total_return_pct": str((total_pnl / config.starting_cash * 100)
                                     .quantize(Decimal("0.001"))),
             "max_drawdown_pct": str((max_drawdown * 100).quantize(Decimal("0.001"))),
-            "open_shares": shares, "halted": halted, "signals": signals,
+            "open_shares": shares, "halted": halted,
+            "drawdown_halt": drawdown_halt, "signals": signals,
             "proposals": proposals,
             "risk_decisions": risk_decisions, "fills": fills,
             "unfilled_orders": unfilled_orders, "closed_trades": closed_trades,

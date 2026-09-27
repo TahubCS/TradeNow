@@ -87,7 +87,7 @@
       <article class="panel"><div class="panel-head"><div><h2>Simulated fills</h2><div class="sub" id="fillSubtitle">Next open or scheduled roll close</div></div><span class="tag">READ ONLY</span></div><div class="scroll"><table><thead><tr><th>Date</th><th id="fillInstrumentHeading">Contract</th><th>Side</th><th id="fillPointHeading">Point</th><th class="right">Price</th><th class="right" id="fillGapHeading">Open gap</th></tr></thead><tbody id="fillRows"></tbody></table><div class="empty" id="emptyFills" hidden>No fills. The selection gate or signal chose no trade.</div></div></article>
     </section>
     <section class="lower">
-      <article class="panel"><div class="panel-head"><div><h2>Risk decisions</h2><div class="sub">Every simulated order follows a risk decision</div></div></div><div class="scroll"><table><thead><tr><th>Date</th><th>Action</th><th>Status</th><th>Reason</th></tr></thead><tbody id="riskRows"></tbody></table><div class="empty" id="emptyRisk" hidden>No orders were proposed during this holdout.</div></div><h2 style="margin-top:20px">Unfilled orders</h2><p class="sub" id="rollSummary"></p><div class="scroll"><table><thead><tr><th>Date</th><th id="unfilledInstrumentHeading">Contract</th><th>Side</th><th>Reason</th></tr></thead><tbody id="unfilledRows"></tbody></table><div class="empty" id="emptyUnfilled">No unfilled orders.</div></div></article>
+      <article class="panel"><div class="panel-head"><div><h2>Risk decisions</h2><div class="sub">Every simulated order follows a risk decision</div></div></div><p class="sub" id="drawdownStatus" hidden></p><div class="scroll"><table><thead><tr><th>Date</th><th>Action</th><th>Status</th><th>Reason</th></tr></thead><tbody id="riskRows"></tbody></table><div class="empty" id="emptyRisk" hidden>No orders were proposed during this holdout.</div></div><h2 style="margin-top:20px">Unfilled orders</h2><p class="sub" id="rollSummary"></p><div class="scroll"><table><thead><tr><th>Date</th><th id="unfilledInstrumentHeading">Contract</th><th>Side</th><th>Reason</th></tr></thead><tbody id="unfilledRows"></tbody></table><div class="empty" id="emptyUnfilled">No unfilled orders.</div></div></article>
       <article class="panel" id="stressPanel" hidden><div class="panel-head"><div><h2>Stress suite</h2><div class="sub" id="stressSummary">Synthetic seeds and fault injections</div></div><span class="tag" id="stressStatus">—</span></div><div class="scroll"><table><thead><tr><th>Seed</th><th>Selection</th><th class="right">Holdout P&amp;L</th><th>Status</th></tr></thead><tbody id="stressRows"></tbody></table></div><p class="sub" id="faultSummary" style="margin-top:14px"></p></article>
       <article class="panel" id="guidePanel"><div class="panel-head"><div><h2>How to read this run</h2><div class="sub">One pass from evidence to execution</div></div></div><p id="guideText" style="color:var(--muted);margin:0">Three fixed moving-average hypotheses are measured on development and validation segments. Only validation chooses the holdout strategy. If every score is nonpositive, the system holds cash. Each period starts flat, and the order manager enforces risk approval and deduplicates simulated order IDs.</p><p class="sub" id="periodLabel" style="margin:16px 0 0"></p></article>
     </section>
@@ -125,6 +125,7 @@
       const d=run.data;
       $('stressPanel').hidden=true;$('guidePanel').hidden=false;$('evaluationPanel').hidden=true;
       if(run.mode==='offline_gld_simulation'){renderGld(run);return;}
+      $('drawdownStatus').hidden=true;
       $('instrumentEyebrow').textContent='Micro Gold · Offline Research';
       $('instrumentIntro').textContent='Replay synthetic or locally supplied MGC bars, compare hypotheses, and inspect the holdout portfolio. This dashboard never contacts a brokerage or market-data provider.';
       $('priceTitle').textContent='MGC price';$('priceChart').setAttribute('aria-label','MGC price chart');
@@ -148,6 +149,11 @@
     }
     function renderGld(run){
       const s=run.holdout_summary,d=run.data,c=run.config;
+      const halt=s.drawdown_halt;
+      $('drawdownStatus').hidden=false;
+      $('drawdownStatus').textContent=halt
+        ? `Closing-equity halt: ${halt.trigger_date} at ${halt.trigger_drawdown_pct}% drawdown (${halt.shares_at_trigger} shares). ${halt.exit_date?`Exit filled ${halt.exit_date} at ${money(halt.exit_price)}.`:halt.exit_pending?'Exit still pending at the end of the data.':'Flat when triggered.'} Threshold ${halt.threshold_pct}% does not cap losses.`
+        : `No drawdown halt triggered. The ${Number(c.max_drawdown_fraction)*100}% threshold uses closing equity and requests an exit at the next tradable open; it does not cap losses.`;
       const evaluation=run.evaluation,comparison=evaluation.holdout,rolling=evaluation.rolling_pre_holdout;
       $('evaluationPanel').hidden=false;
       clear('benchmarkRows');for(const [label,key] of [['Strategy','strategy'],['Buy and hold 50%','buy_hold_50pct'],['Buy and hold 100%','buy_hold_100pct'],['Cash','cash']]){const item=comparison[key],row=document.createElement('tr');cell(row,label);cell(row,item.total_return_pct+'%','right');cell(row,item.annualized_return_pct+'%','right');cell(row,item.max_drawdown_pct+'%','right');$('benchmarkRows').appendChild(row);}
@@ -163,7 +169,7 @@
       $('contractTag').textContent='GLD';$('positionContractLabel').textContent='GLD shares';
       $('fillSubtitle').textContent='Next-open share orders';
       $('fillInstrumentHeading').textContent='Symbol';$('fillPointHeading').textContent='Shares';$('fillGapHeading').textContent='Slip/share';$('unfilledInstrumentHeading').textContent='Symbol';
-      $('warningText').textContent='HISTORICAL GLD SIMULATION ONLY · Data sourced by Tiingo for private research. Fills and slippage are simulated; daily bars cannot show actual order execution. No brokerage, Databento, or Tiingo API call occurs during this replay.';
+      $('warningText').textContent='HISTORICAL GLD SIMULATION ONLY · The drawdown threshold is a closing-equity halt with a next-tradable-open exit request, not a guaranteed stop. Fills and slippage are simulated; daily bars cannot show actual order execution. No brokerage, Databento, or Tiingo API call occurs during this replay.';
       $('guideText').textContent='Three fixed moving-average hypotheses are measured on development and validation segments. Only validation chooses the holdout strategy. If every score is nonpositive, the system holds cash. Each period starts flat; buys spend cash on whole GLD shares.';
       setMetric('metricPnl',money(s.total_pnl),true);setMetric('metricStrategy',run.selected_hypothesis||'NO TRADE');setMetric('metricDrawdown',s.max_drawdown_pct+'%');setMetric('metricFills',String(s.fills));setMetric('metricPosition',String(s.open_shares));
       $('runId').textContent='RUN '+run.run_id.slice(0,8).toUpperCase();

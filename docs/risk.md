@@ -21,6 +21,17 @@ Initial paper-trading limits may include:
 
 These values are examples and should be tuned for the simulation environment.
 
+## Implemented GLD offline drawdown rule
+
+The GLD simulator starts with a 10% threshold measured against the highest
+**closing equity** seen in a run. On a closing breach it permanently blocks new
+entries and requests a sale of any open shares at the next tradable bar's open.
+This is a simulated next-open sale, not an intraday stop or a guaranteed 10%
+loss cap. An overnight gap can make the loss larger. A zero-volume or stale-gap
+bar blocks the sale and the simulator retries on a later bar. If the breach is
+on the final bar, the position remains open and the report marks the exit pending.
+The report records the trigger, simulated exit, and maximum closing-equity drawdown.
+
 ## Validation Flow
 
 ```text
