@@ -1,19 +1,12 @@
 """Deterministic, cash-funded GLD share simulation using local daily bars."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date
 from decimal import ROUND_DOWN, Decimal
 
-
-@dataclass(frozen=True)
-class EquityBar:
-    date: date
-    symbol: str
-    open: Decimal
-    high: Decimal
-    low: Decimal
-    close: Decimal
-    volume: int
+from .equity_types import EquityBar, FeatureRow
+from .features import compute_features
+from .strategies import History, SmaCross, Strategy
 
 
 @dataclass(frozen=True)
@@ -58,14 +51,39 @@ def validate_equity_bars(bars: list[EquityBar], config: EquityConfig) -> None:
             raise ValueError("GLD volume cannot be negative")
 
 
-def simulate_equity(bars: list[EquityBar], config: EquityConfig = EquityConfig()) -> dict:
-    """Compute signals at each close and fill approved whole-share orders next open."""
+def plain_target(target: Decimal) -> int | str:
+    """Whole targets stay integers in reports, as before fractional sizing existed."""
+    return int(target) if target == target.to_integral_value() else str(target)
+
+
+def feature_rows(bars: list[EquityBar], strategy: Strategy,
+                 features: Sequence[FeatureRow] | None = None) -> Sequence[FeatureRow]:
+    """The rows a strategy reads: given, computed, or closes only if it needs no features."""
+    if features is not None:
+        if (len(features) != len(bars)
+                or any(row.date != bar.date for row, bar in zip(features, bars, strict=True))):
+            raise ValueError("Feature rows do not match the GLD bars")
+        return features
+    if strategy.needs_features:
+        return compute_features(bars)
+    return [FeatureRow(bar.date, bar.close, {}) for bar in bars]
+
+
+def simulate_equity(bars: list[EquityBar], config: EquityConfig = EquityConfig(),
+                    strategy: Strategy | None = None,
+                    features: Sequence[FeatureRow] | None = None) -> dict:
+    """Compute signals at each close and fill approved whole-share orders next open.
+
+    Without a strategy, the SMA crossover set by config's windows is used.
+    """
     validate_equity_bars(bars, config)
+    strategy = strategy or SmaCross(config.fast_window, config.slow_window)
+    rows = feature_rows(bars, strategy, features)
     cash = config.starting_cash
     shares = 0
     entry_price: Decimal | None = None
     entry_date: str | None = None
-    target = 0
+    target = Decimal(0)
     halted = False
     drawdown_halt: dict | None = None
     peak_equity = cash
@@ -93,7 +111,8 @@ def simulate_equity(bars: list[EquityBar], config: EquityConfig = EquityConfig()
                                         "symbol": "GLD", "reason": blocked})
             elif action == "BUY":
                 price = bar.open + config.slippage_per_share
-                budget = cash * config.max_position_fraction - config.commission_per_order
+                budget = (cash * config.max_position_fraction * target
+                          - config.commission_per_order)
                 quantity = max(0, int((budget / price).to_integral_value(rounding=ROUND_DOWN)))
                 if quantity == 0:
                     reason = ("INSUFFICIENT_CASH" if cash < price + config.commission_per_order
@@ -163,20 +182,16 @@ def simulate_equity(bars: list[EquityBar], config: EquityConfig = EquityConfig()
             risk_decisions.append({"date": day, "action": "HALT_NEW_ENTRIES",
                                    "approved": False, "reason": "DRAWDOWN_LIMIT"})
 
-        if index >= config.slow_window - 1:
-            fast = sum(item.close for item in bars[index + 1 - config.fast_window:index + 1])
-            slow = sum(item.close for item in bars[index + 1 - config.slow_window:index + 1])
-            fast_average = fast / config.fast_window
-            slow_average = slow / config.slow_window
-            strategy_target = int(fast_average > slow_average)
-            target = strategy_target if config.enable_entries and not halted else 0
-            signals.append({"date": day, "strategy_target": strategy_target,
-                            "target": target, "fast_sma": str(fast_average),
-                            "slow_sma": str(slow_average)})
+        decision = strategy.decide(History(rows, index), holding=shares > 0)
+        if decision is not None:
+            strategy_target = decision.target
+            target = strategy_target if config.enable_entries and not halted else Decimal(0)
+            signals.append({"date": day, "strategy_target": plain_target(strategy_target),
+                            "target": plain_target(target), **decision.evidence})
             proposed_action = ("BUY" if target and not shares else
                                "SELL" if not target and shares else "NO_TRADE")
             proposals.append({"date": day, "action": proposed_action,
-                              "target_position": target,
+                              "target_position": plain_target(target),
                               "reason": ("DRAWDOWN_HALT" if halted else
                                          "SELECTION_GATE" if not config.enable_entries else
                                          "STRATEGY_SIGNAL")})

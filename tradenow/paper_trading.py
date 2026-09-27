@@ -17,12 +17,11 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from .alpaca_paper import Account, AlpacaError, BrokerOrder, Clock, DailyBar, PaperOrder, Position
-from .equity import EquityConfig, simulate_equity
+from .equity import EquityConfig, feature_rows, plain_target
 from .execution_quality import SessionReference, order_quality, summarize_quality, summarize_runs
 from .gld_research import parse_gld_csv, run_gld_csv
 from .live_gate import EquitySnapshot, forward_gate, research_gate, strategy_version, verdict
 from .logs import read_runs
-from .offline import CANDIDATES, evaluate_candidates
 from .paper_rules import (
     SUBMITTING,
     LedgerOrder,
@@ -33,11 +32,12 @@ from .paper_rules import (
     measure_drawdown,
     plan_order,
     reconcile,
-    sma_signal,
     volume_cap,
 )
 from .risk_config import LoadedRisk, default_risk
+from .selection import chronological_split, select_candidate
 from .settings import SETTINGS
+from .strategies import History
 
 
 STATE_DIR = SETTINGS.alpaca_dir
@@ -292,7 +292,8 @@ class PaperStore:
 
 
 # The code that decides trades. Editing any of it restarts the gate's forward count.
-DECISION_CODE = ("equity.py", "offline.py", "paper_rules.py")
+DECISION_CODE = ("equity.py", "equity_types.py", "features.py", "strategies.py",
+                 "selection.py", "paper_rules.py")
 
 
 def decision_code_sha256() -> str:
@@ -441,7 +442,9 @@ def paper_plan(client: BrokerClient, store: PaperStore, source_bytes: bytes,
         return {"action": "WAIT", "reason": "an earlier paper order is still open"}
 
     bars = parse_gld_csv(source_bytes, config)
-    _, _, selected, _, _ = evaluate_candidates(bars, config, simulate_equity)
+    periods = chronological_split(bars)
+    chosen = select_candidate(periods["development"], periods["validation"], config).selected
+    selected = None if chosen is None else chosen.name
     last = bars[-1]
     session = clock.next_open.date()
     if last.date >= session:
@@ -452,9 +455,13 @@ def paper_plan(client: BrokerClient, store: PaperStore, source_bytes: bytes,
     if problems:
         raise PaperBlocked("DATA_CHECK_FAILED", "; ".join(problems))
 
-    chosen = next((item for item in CANDIDATES if item[0] == selected), None)
-    windows = None if chosen is None else (chosen[1], chosen[2])
-    signal = None if windows is None else sma_signal(bars, *windows)
+    signal = None
+    if chosen is not None:
+        rows = feature_rows(bars, chosen.strategy)
+        signal = chosen.strategy.decide(History(rows, len(rows) - 1),
+                                        holding=reconciliation.broker_shares > 0)
+        if signal is None:
+            raise PaperBlocked("NOT_ENOUGH_HISTORY", f"{chosen.name} is still warming up")
     drawdown = measure_drawdown(ledger.peak_equity, account.equity,
                                 config.max_drawdown_fraction)
     daily = measure_daily_loss(account.last_equity, account.equity,
@@ -464,8 +471,8 @@ def paper_plan(client: BrokerClient, store: PaperStore, source_bytes: bytes,
         halt = DrawdownHalt(clock.timestamp.isoformat(), drawdown.peak_equity,
                             drawdown.equity, (drawdown.fraction * 100).quantize(Decimal("0.001")))
     # A daily-loss breach sells and skips one session; the next plan starts fresh.
-    target = (signal.strategy_target if signal is not None and halt is None
-              and not daily.breached else 0)
+    target = (signal.target if signal is not None and halt is None
+              and not daily.breached else Decimal(0))
     planned = plan_order(target, reconciliation.broker_shares, account.cash, last.close,
                          config.max_position_fraction, config.commission_per_order,
                          risk.config.buy_limit_buffer,
@@ -474,24 +481,24 @@ def paper_plan(client: BrokerClient, store: PaperStore, source_bytes: bytes,
               "DAILY_LOSS_EXIT" if planned.action == "SELL" and daily.breached else
               "SELECTION_GATE" if planned.action == "SELL" and signal is None else
               "DAILY_LOSS_PAUSE" if planned.action == "NO_TRADE" and daily.breached
-              and signal is not None and signal.strategy_target and halt is None else
+              and signal is not None and signal.target and halt is None else
               planned.reason)
     version = strategy_version(decision_code_sha256(), selected, risk.sha256)
     store.record_equity(EquitySnapshot(last.date, account.equity, version))
     store.save_ledger(replace(ledger, peak_equity=drawdown.peak_equity, drawdown_halt=halt))
 
-    plan = {
-        "schema_version": 1, "created_at": clock.timestamp.isoformat(),
+    # Schema 2: the signal names its strategy and evidence instead of SMA fields.
+    plan: dict[str, Any] = {
+        "schema_version": 2, "created_at": clock.timestamp.isoformat(),
         "session_open": clock.next_open.isoformat(),
         "data": {"source_name": source_name,
                  "sha256": hashlib.sha256(source_bytes).hexdigest(),
                  "last_date": last.date.isoformat(), "reference_close": str(last.close),
                  "alpaca_sip_sessions_compared": len(alpaca_bars)},
         "selected_hypothesis": selected,
-        "signal": None if signal is None or windows is None else {
-            "fast_window": windows[0], "slow_window": windows[1],
-            "fast_sma": str(signal.fast_sma), "slow_sma": str(signal.slow_sma),
-            "strategy_target": signal.strategy_target},
+        "signal": None if signal is None or chosen is None else {
+            "strategy": chosen.name, "parameters": chosen.parameters,
+            "evidence": signal.evidence, "strategy_target": plain_target(signal.target)},
         "account": {"cash": str(account.cash), "equity": str(account.equity)},
         "drawdown": {"peak_equity": str(drawdown.peak_equity),
                      "current_pct": str((drawdown.fraction * 100).quantize(Decimal("0.001"))),
@@ -506,7 +513,7 @@ def paper_plan(client: BrokerClient, store: PaperStore, source_bytes: bytes,
         "risk": {"sha256": risk.sha256, "source": risk.source,
                  "settings": {key: str(value) for key, value in asdict(risk.config).items()}},
         "strategy_version": version,
-        "position_before": reconciliation.broker_shares, "target": target,
+        "position_before": reconciliation.broker_shares, "target": plain_target(target),
         "action": planned.action, "reason": reason,
         "order": None if planned.action not in ("BUY", "SELL") else {
             "side": planned.action.lower(), "qty": planned.qty,

@@ -3,7 +3,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from tradenow.alpaca_paper import BrokerOrder, DailyBar, Position
-from tradenow.equity import EquityBar, EquityConfig, simulate_equity
+from tradenow.equity import EquityBar, EquityConfig, feature_rows, plain_target, simulate_equity
 from tradenow.paper_rules import (
     NOT_FOUND,
     SUBMITTING,
@@ -13,8 +13,8 @@ from tradenow.paper_rules import (
     measure_drawdown,
     plan_order,
     reconcile,
-    sma_signal,
 )
+from tradenow.strategies import History, SmaCross
 
 
 def gld_bars(closes: list[str], start: date = date(2026, 1, 5)) -> list[EquityBar]:
@@ -49,9 +49,12 @@ class SignalTests(unittest.TestCase):
         bars = gld_bars(closes)
         config = EquityConfig(fast_window=3, slow_window=10)
         simulated = simulate_equity(bars, config)["signals"]
+        strategy = SmaCross(3, 10)
         for index, signal in enumerate(simulated, start=config.slow_window - 1):
-            live = sma_signal(bars[:index + 1], 3, 10)
-            self.assertEqual(live.strategy_target, signal["strategy_target"])
+            # paper-plan decides from history ending at that close, as here.
+            rows = feature_rows(bars[:index + 1], strategy)
+            live = strategy.decide(History(rows, index), holding=False)
+            self.assertEqual(plain_target(live.target), signal["strategy_target"])
 
 
 class CrossCheckTests(unittest.TestCase):

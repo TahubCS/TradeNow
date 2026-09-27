@@ -14,12 +14,11 @@ records which features it used.
 import hashlib
 from bisect import insort
 from collections import deque
-from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
-from .equity import EquityBar
+from .equity_types import EquityBar, FeatureRow
 
 
 FEATURE_VERSION = "gld_features_v1"
@@ -33,16 +32,6 @@ FEATURE_NAMES = (
     "rsi_14", "atr_14", "vol_20", "vol_60", "vol_20_median_252",
     "volume_z_20", "donchian_high_55", "donchian_low_20", "drawdown_252",
 )
-
-
-@dataclass(frozen=True)
-class FeatureRow:
-    date: date
-    close: Decimal
-    values: dict[str, Decimal | None]
-
-    def __getitem__(self, name: str) -> Decimal | None:
-        return self.values[name]
 
 
 def feature_code_sha256() -> str:

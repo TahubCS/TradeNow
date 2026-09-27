@@ -97,3 +97,22 @@ Example:
 ```
 
 That output becomes one input to the proposal process.
+
+## Implemented Strategy Interface
+
+`tradenow/strategies.py` defines the interface every GLD strategy uses. A
+strategy reads features known at a close through `History`, a read-only view
+that raises an error on any later day, and returns a `Decision`: a target
+from 0 (cash) to 1 (the full position the risk limits allow), plus the
+evidence it used. That evidence is logged with every simulated signal and
+saved in every paper plan.
+
+One strategy object drives the backtest (`simulate_equity`), the rolling
+evaluation, and `paper-plan`, and `tradenow/selection.py` holds the single
+validation-only selection rule, so the rule tested is the rule traded.
+Fractional targets set the entry size; positions are not rebalanced while
+held.
+
+The registered GLD candidates are `GLD_CANDIDATES`. Moving the original SMA
+rule onto this interface changed no result: a regression test holds the
+SHA-256 of reports and simulations produced before the change.

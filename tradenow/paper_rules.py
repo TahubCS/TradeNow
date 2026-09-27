@@ -1,4 +1,6 @@
-"""Pure paper-trading rules: signal, data cross-check, reconciliation, drawdown, sizing.
+"""Pure paper-trading rules: data cross-check, reconciliation, drawdown, sizing.
+
+Trading signals come from tradenow/strategies.py, the same code the backtest uses.
 
 Nothing here performs I/O, so every rule can be tested without Alpaca.
 """
@@ -21,13 +23,6 @@ VOLUME_LOOKBACK_SESSIONS = 20
 SUBMITTING = "submitting"
 NOT_FOUND = "not_found"
 LEDGER_FINAL_STATUSES = FINAL_ORDER_STATUSES | {NOT_FOUND}
-
-
-@dataclass(frozen=True)
-class Signal:
-    fast_sma: Decimal
-    slow_sma: Decimal
-    strategy_target: int
 
 
 @dataclass(frozen=True)
@@ -95,15 +90,6 @@ class PlannedAction:
     reason: str
     qty: int = 0
     limit_price: Decimal | None = None
-
-
-def sma_signal(bars: list[EquityBar], fast: int, slow: int) -> Signal:
-    """The same SMA rule as simulate_equity, evaluated at the last close."""
-    if not 0 < fast < slow or len(bars) < slow:
-        raise ValueError("Not enough GLD bars for the selected SMA windows")
-    fast_sma = sum((bar.close for bar in bars[-fast:]), Decimal(0)) / fast
-    slow_sma = sum((bar.close for bar in bars[-slow:]), Decimal(0)) / slow
-    return Signal(fast_sma, slow_sma, int(fast_sma > slow_sma))
 
 
 def cross_check_closes(tiingo: list[EquityBar], alpaca: list[DailyBar]) -> list[str]:
@@ -210,16 +196,17 @@ def volume_cap(bars: list[EquityBar], fraction: Decimal) -> int:
     return int((average * fraction).to_integral_value(rounding=ROUND_DOWN))
 
 
-def plan_order(target: int, shares: int, cash: Decimal, reference_close: Decimal,
+def plan_order(target: Decimal, shares: int, cash: Decimal, reference_close: Decimal,
                max_position_fraction: Decimal, commission: Decimal,
                buy_limit_buffer: Decimal = BUY_LIMIT_BUFFER,
                max_buy_shares: int | None = None) -> PlannedAction:
     """Size a buy from cash like the simulator; never use margin buying power.
-    Sells are never reduced: an exit must always be possible."""
+    Sells are never reduced: an exit must always be possible. A fractional
+    target buys that fraction of the allowed position, as in the simulator."""
     if target and not shares:
         limit = (reference_close * (1 + buy_limit_buffer)).quantize(
             Decimal("0.01"), rounding=ROUND_HALF_UP)
-        budget = cash * max_position_fraction - commission
+        budget = cash * max_position_fraction * target - commission
         qty = max(0, int((budget / limit).to_integral_value(rounding=ROUND_DOWN)))
         if qty == 0:
             return PlannedAction("REJECTED", "INSUFFICIENT_CASH"

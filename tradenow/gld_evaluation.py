@@ -5,7 +5,8 @@ from decimal import ROUND_DOWN, Decimal
 
 from .equity import EquityBar, EquityConfig, simulate_equity
 from .metrics import equity_performance, performance
-from .offline import CANDIDATES
+from .selection import run_selected, select_candidate
+from .strategies import candidate_named
 
 
 ROLL_DEVELOPMENT_BARS = 504
@@ -77,22 +78,12 @@ def _rolling_checks(bars: list[EquityBar], config: EquityConfig) -> dict:
         validation = bars[start + ROLL_DEVELOPMENT_BARS:
                           start + ROLL_DEVELOPMENT_BARS + ROLL_VALIDATION_BARS]
         test = bars[start + ROLL_DEVELOPMENT_BARS + ROLL_VALIDATION_BARS:start + span]
-        best_score: Decimal | None = None
-        best_name = None
-        best_config = None
-        best_development_return = None
-        for name, fast, slow in CANDIDATES:
-            candidate = replace(config, fast_window=fast, slow_window=slow)
-            development_result = simulate_equity(development, candidate)
-            measured = simulate_equity(validation, candidate)
-            score = (Decimal(measured["total_return_pct"])
-                     - Decimal(measured["max_drawdown_pct"]))
-            if best_score is None or score > best_score:
-                best_score, best_name, best_config = score, name, candidate
-                best_development_return = development_result["total_return_pct"]
-        assert best_score is not None and best_config is not None
-        selected = best_name if best_score > 0 else None
-        result = simulate_equity(test, replace(best_config, enable_entries=selected is not None))
+        choice = select_candidate(development, validation, config)
+        selected = None if choice.selected is None else choice.selected.name
+        best_development_return = next(
+            item["development"]["total_return_pct"] for item in choice.hypotheses
+            if item["name"] == choice.best.name)
+        result = run_selected(test, config, choice)
         benchmark = _buy_and_hold(test, config, config.max_position_fraction)
         full_benchmark = _buy_and_hold(test, config, Decimal(1))
         strategy_return = Decimal(result["total_return_pct"])
@@ -134,17 +125,15 @@ def evaluate_gld(pre_holdout: list[EquityBar], holdout: list[EquityBar],
     strategy_equity = Decimal(holdout_result["ending_equity"])
     benchmark_50 = _buy_and_hold(holdout, config, config.max_position_fraction)
     benchmark_100 = _buy_and_hold(holdout, config, Decimal(1))
-    chosen = next((item for item in CANDIDATES if item[0] == selected), None)
+    chosen = candidate_named(selected)
     if selected is not None and chosen is None:
         raise ValueError("Selected GLD hypothesis is unknown")
     scenarios = []
     for extra in (Decimal(0), Decimal("0.04"), Decimal("0.09")):
         slip = config.slippage_per_share + extra
-        scenario = replace(config, slippage_per_share=slip,
-                           fast_window=chosen[1] if chosen else config.fast_window,
-                           slow_window=chosen[2] if chosen else config.slow_window,
-                           enable_entries=selected is not None)
-        result = (holdout_result if extra == 0 else simulate_equity(holdout, scenario))
+        scenario = replace(config, slippage_per_share=slip, enable_entries=selected is not None)
+        result = (holdout_result if extra == 0 else
+                  simulate_equity(holdout, scenario, None if chosen is None else chosen.strategy))
         scenarios.append({"slippage_per_share": str(slip),
                           "selected_hypothesis": selected,
                           "total_return_pct": result["total_return_pct"],

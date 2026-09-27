@@ -998,7 +998,7 @@
       const rows = [
         ['Decision', `${humanize(plan.action)} · ${humanize(plan.reason)}`],
         ['Strategy', plan.selected_hypothesis || 'No trade (selection gate)'],
-        signal ? ['Signal', `SMA ${signal.fast_window} ${money(signal.fast_sma)} ${signal.strategy_target ? '>' : '≤'} SMA ${signal.slow_window} ${money(signal.slow_sma)} → ${signal.strategy_target ? 'long' : 'flat'}`] : null,
+        signal ? ['Signal', `${signal.strategy} → ${Number(signal.strategy_target) === 0 ? 'flat' : Number(signal.strategy_target) === 1 ? 'long' : `long ${pct(Number(signal.strategy_target) * 100)} of allowed size`}${Object.entries(signal.evidence || {}).map(([k, v]) => ` · ${humanize(k)} ${Number(v).toFixed(2)}`).join('')}`] : null,
         ['Data', `Tiingo through ${fmtDay(plan.data.last_date)} · close ${money(plan.data.reference_close)} · ${plan.data.alpaca_sip_sessions_compared} Alpaca sessions cross-checked`],
         ['Position', `${count(plan.position_before)} shares → target ${plan.target ? 'long' : 'flat'}`],
         ['Drawdown', `${pct(plan.drawdown.current_pct)} of peak ${money(plan.drawdown.peak_equity)}${plan.drawdown.halted ? ' · halted' : ''}`],

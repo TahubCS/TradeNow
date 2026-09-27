@@ -9,10 +9,11 @@ from decimal import Decimal, InvalidOperation
 from io import StringIO
 from pathlib import Path
 
-from .equity import EquityBar, EquityConfig, simulate_equity, validate_equity_bars
+from .equity import EquityBar, EquityConfig, validate_equity_bars
 from .gld_evaluation import evaluate_gld
 from .live_gate import research_gate, verdict
-from .offline import CANDIDATES, evaluate_candidates
+from .selection import chronological_split, run_selected, select_candidate
+from .strategies import GLD_CANDIDATES
 from .tiingo import PRIVATE_DIR
 
 
@@ -86,17 +87,25 @@ def _summary(result: dict) -> dict:
             "drawdown_halt": result["drawdown_halt"]}
 
 
+# Code whose change can change a research result; its hash identifies each report.
+RESEARCH_CODE = ("equity.py", "equity_types.py", "features.py", "strategies.py",
+                 "selection.py", "gld_research.py", "gld_evaluation.py")
+
+
 def run_gld_csv(source_bytes: bytes, filename: str = "GLD.csv",
                 config: EquityConfig = EquityConfig(),
                 source: str = "local_gld_csv") -> dict:
     bars = parse_gld_csv(source_bytes, config)
-    periods, hypotheses, selected, best_score, holdout = evaluate_candidates(
-        bars, config, simulate_equity)
+    periods = chronological_split(bars)
+    choice = select_candidate(periods["development"], periods["validation"], config)
+    hypotheses, best_score = choice.hypotheses, choice.best_score
+    selected = None if choice.selected is None else choice.selected.name
+    holdout = run_selected(periods["holdout"], config, choice)
     pre_holdout = periods["development"] + periods["validation"]
     evaluation = evaluate_gld(pre_holdout, periods["holdout"], config, selected, holdout)
     data_hash = hashlib.sha256(source_bytes).hexdigest()
     code_digest = hashlib.sha256()
-    for name in ("equity.py", "gld_research.py", "gld_evaluation.py", "offline.py"):
+    for name in RESEARCH_CODE:
         code_digest.update(name.encode("utf-8"))
         code_digest.update((Path(__file__).parent / name).read_bytes())
     code_hash = code_digest.hexdigest()
@@ -105,7 +114,7 @@ def run_gld_csv(source_bytes: bytes, filename: str = "GLD.csv",
                         for char in basename)[:100] or "GLD.csv"
     run_inputs = {"schema_version": 2, "symbol": "GLD", "source": source,
                   "data_hash": data_hash, "code_hash": code_hash,
-                  "candidates": CANDIDATES,
+                  "candidates": [[item.name, item.parameters] for item in GLD_CANDIDATES],
                   "config": {key: str(value) for key, value in vars(config).items()}}
     run_id = hashlib.sha256(json.dumps(run_inputs, sort_keys=True).encode()).hexdigest()[:16]
     return {"schema_version": 2, "mode": "offline_gld_simulation",
