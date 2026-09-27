@@ -94,13 +94,24 @@ class MultiCandidate:
     def __call__(self, views: Mapping[str, History]) -> dict[str, Decimal]:
         """Target weights after today's close (an Allocator for portfolio.py)."""
         rows = {symbol: view.today for symbol, view in views.items()}
-        if self.sizing == "eq":
-            weights = dict.fromkeys(rows, _floor(Decimal(1) / len(rows)))
-        else:
-            weights = capped_inverse_volatility({symbol: row["vol_60"]
-                                                 for symbol, row in rows.items()})
-        return {symbol: weight for symbol, weight in weights.items()
-                if rule_holds(self.rule, rows[symbol])}
+        return sized_weights(self.sizing, rows,
+                             {symbol for symbol, row in rows.items()
+                              if rule_holds(self.rule, row)})
+
+
+def sized_weights(sizing: str, rows: Mapping[str, FeatureRow],
+                  in_symbols: set[str]) -> dict[str, Decimal]:
+    """Weights for the assets that are in; the others keep their share in cash.
+    eq gives each asset 1/n of equity; iv35 caps inverse volatility over every
+    asset with a value, before out assets are dropped (clarification 13)."""
+    if sizing == "eq":
+        weights = dict.fromkeys(rows, _floor(Decimal(1) / len(rows)))
+    elif sizing == "iv35":
+        weights = capped_inverse_volatility({symbol: row["vol_60"]
+                                             for symbol, row in rows.items()})
+    else:
+        raise ValueError(f"Unknown sizing {sizing!r}")
+    return {symbol: weight for symbol, weight in weights.items() if symbol in in_symbols}
 
 
 # The registered candidates (ADR-011), in registration order, which also

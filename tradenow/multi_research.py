@@ -1,64 +1,90 @@
-"""The multi-asset research run (ADR-011): report, verdict, and files.
+"""Multi-asset research runs: report, verdict, and files.
 
-run_multi evaluates the six registered candidates on an aligned universe and
-returns a report whose run ID hashes the data, code, candidates, and
-configuration. Identical inputs give byte-identical reports: nothing here
-reads the clock. Loading data and writing the experiment log happen in the
-command, not here.
+A Study names what is being tested: the ADR-011 rules or the ADR-012 models,
+with the code that can change their result. run_study evaluates its
+candidates on an aligned universe and returns a report whose run ID hashes
+the data, code, candidates, and configuration. Identical inputs give
+byte-identical reports: nothing here reads the clock. Loading data and
+writing the experiment log happen in the command, not here.
 """
 
 import hashlib
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
+from .experiments import MULTI_STRATEGY_FAMILY
 from .features import FEATURE_VERSION, feature_code_sha256
 from .live_gate import multi_research_gate, verdict
-from .multi_evaluation import evaluate_multi
-from .multi_strategies import MULTI_CANDIDATES, MultiCandidate
+from .multi_evaluation import PortfolioCandidate, evaluate_multi
+from .multi_strategies import MULTI_CANDIDATES
 from .portfolio import PortfolioConfig
 from .universe import UNIVERSE, Universe
 
 
-# Code whose change can change a result; its hash identifies each report.
-RESEARCH_CODE = ("equity_types.py", "features.py", "strategies.py", "metrics.py",
-                 "selection.py", "gld_evaluation.py", "universe.py", "portfolio.py",
-                 "multi_strategies.py", "multi_evaluation.py", "multi_research.py",
-                 "live_gate.py")
-
-MEANING_PASS = ("Research stage passed R1 to R5. Per ADR-011, the next step is a new ADR for "
-                "multi-asset paper trading and a year of forward testing (F1 to F4). "
-                "No real money; nothing is enabled automatically.")
-MEANING_FAIL = ("Not proven to beat both an equal-weight mix of the six ETFs (B1) and SPY "
-                "(B2). Do not trade real money; a low-cost index fund is expected to do at "
-                "least as well. Per ADR-011, the candidates are not tuned and re-run.")
+# Code shared by every study whose change can change a result.
+CORE_CODE = ("equity_types.py", "features.py", "strategies.py", "metrics.py",
+             "selection.py", "gld_evaluation.py", "universe.py", "portfolio.py",
+             "multi_strategies.py", "multi_evaluation.py", "multi_research.py",
+             "live_gate.py")
 
 
-def code_sha256() -> str:
+@dataclass(frozen=True)
+class Study:
+    mode: str
+    title: str
+    adr: str
+    strategy_family: str  # the experiment log's strategy version
+    candidates: tuple[PortfolioCandidate, ...]
+    registered_trials_total: int  # every registered candidate so far, all ADRs
+    code: tuple[str, ...] = CORE_CODE
+
+
+MULTI_STUDY = Study("multi_asset_research", "Multi-asset research report", "ADR-011",
+                    MULTI_STRATEGY_FAMILY, MULTI_CANDIDATES, 18)
+
+
+def code_sha256(files: tuple[str, ...] = CORE_CODE) -> str:
     digest = hashlib.sha256()
-    for name in RESEARCH_CODE:
+    for name in files:
         digest.update(name.encode("utf-8"))
         digest.update((Path(__file__).parent / name).read_bytes())
     return digest.hexdigest()
 
 
-def run_multi(universe: Universe, config: PortfolioConfig = PortfolioConfig(),
-              candidates: tuple[MultiCandidate, ...] = MULTI_CANDIDATES) -> dict:
+def _meaning(passed: bool, adr: str) -> str:
+    if passed:
+        return (f"Research stage passed R1 to R5. Per {adr}, the next step is a new ADR for "
+                "paper trading and a year of forward testing (F1 to F4). No real money; "
+                "nothing is enabled automatically.")
+    return ("Not proven to beat both an equal-weight mix of the six ETFs (B1) and SPY (B2). "
+            "Do not trade real money; a low-cost index fund is expected to do at least as "
+            f"well. Per {adr}, the candidates are not tuned and re-run.")
+
+
+def run_study(universe: Universe, study: Study,
+              config: PortfolioConfig = PortfolioConfig()) -> dict:
     if universe.symbols != UNIVERSE:
         raise ValueError(f"Multi-asset research needs exactly {', '.join(UNIVERSE)} in order")
+    candidates = study.candidates
     evaluation = evaluate_multi(universe, config, candidates)
     config_record = {key: str(value) for key, value in vars(config).items()}
-    code_hash = code_sha256()
-    run_inputs = {"schema_version": 1, "data_hash": universe.sha256, "code_hash": code_hash,
+    code_hash = code_sha256(study.code)
+    run_inputs = {"schema_version": 1, "mode": study.mode, "data_hash": universe.sha256,
+                  "code_hash": code_hash,
                   "candidates": [[item.name, item.parameters] for item in candidates],
                   "config": config_record}
     run_id = hashlib.sha256(json.dumps(run_inputs, sort_keys=True).encode()).hexdigest()[:16]
     research = multi_research_gate(evaluation, len(candidates))
     gate = verdict(research, None)
-    gate["meaning"] = MEANING_PASS if research["passed"] else MEANING_FAIL
+    gate["meaning"] = _meaning(research["passed"], study.adr)
     return {
-        "schema_version": 1, "mode": "multi_asset_research", "run_id": run_id,
+        "schema_version": 1, "mode": study.mode, "run_id": run_id,
+        "title": study.title, "adr": study.adr, "strategy_family": study.strategy_family,
         "code_sha256": code_hash, "config": config_record,
         "candidates": [item.name for item in candidates],
+        "candidate_parameters": {item.name: item.parameters for item in candidates},
+        "registered_trials_total": study.registered_trials_total,
         "feature_version": FEATURE_VERSION, "feature_code_sha256": feature_code_sha256(),
         "data": {"symbols": list(universe.symbols), "bars": len(universe.dates),
                  "first_date": universe.dates[0].isoformat(),
@@ -74,8 +100,15 @@ def run_multi(universe: Universe, config: PortfolioConfig = PortfolioConfig(),
                    "orders are sized at the fill-day open, which live orders cannot do",
                    "the drawdown halt checks closing equity and exits at the next open; "
                    "it does not cap losses",
-                   "the holdout is information only; the gate uses the rolling windows"],
+                   "the holdout is information only; the gate uses the rolling windows",
+                   f"{study.registered_trials_total} candidates have been registered across "
+                   "all ADRs; the more are tried, the likelier one passes by luck"],
     }
+
+
+def run_multi(universe: Universe, config: PortfolioConfig = PortfolioConfig()) -> dict:
+    """The ADR-011 rule candidates."""
+    return run_study(universe, MULTI_STUDY, config)
 
 
 def _row(label: str, item: dict) -> str:
@@ -88,15 +121,16 @@ def render_multi_markdown(report: dict) -> str:
     data, evaluation, gate = report["data"], report["evaluation"], report["live_gate"]
     selection = evaluation["selection"]
     rows = [
-        "# Multi-asset research report (ADR-011)", "",
+        f"# {report['title']} ({report['adr']})", "",
         f"Run ID: `{report['run_id']}`  ",
         f"Symbols: {', '.join(data['symbols'])}  ",
         f"Bars: {data['bars']} ({data['first_date']} to {data['last_date']}), "
         f"{data['price_basis']} prices  ",
         f"Data SHA-256: `{data['sha256']}`  ",
         f"Code SHA-256: `{report['code_sha256']}`  ",
-        f"Candidates: {len(report['candidates'])} ({', '.join(report['candidates'])})", "",
-        f"## Gate (ADR-011): **{gate['verdict']}**", "", gate["meaning"], "",
+        f"Candidates: {len(report['candidates'])} ({', '.join(report['candidates'])}); "
+        f"{report['registered_trials_total']} registered across all ADRs", "",
+        f"## Gate (ADR-011 R1 to R5): **{gate['verdict']}**", "", gate["meaning"], "",
         "| Check | Result | Detail |", "| --- | --- | --- |",
     ]
     for item in gate["research"]["checks"]:

@@ -34,7 +34,7 @@ changes. When asked for a plan only, do not implement.
 ## Commands
 
 ```powershell
-python -m pip install -e ".[dev,web]"      # ruff and mypy are pinned in the dev extra
+python -m pip install -e ".[dev,web,ml]"   # ruff/mypy (dev) and scikit-learn (ml) are pinned
 ruff check tradenow tests
 mypy
 python -m unittest discover -s tests -v    # CI runs these three on Ubuntu and Windows
@@ -46,7 +46,8 @@ Main CLI (`python -m tradenow <command>`):
   `universe` (aligned six-ETF history).
 - Research: `gld` (12 registered GLD candidates plus the gate verdict),
   `multi` (6 registered multi-asset candidates against B1 and B2, R1 to R5,
-  reports in `artifacts/multi/`), and `features --date D`.
+  reports in `artifacts/multi/`), `ml` (4 registered ADR-012 models, same
+  gate, reports in `artifacts/ml/`), and `features --date D`.
 - Paper trading: `paper-plan`, `paper-submit --approve ID`, `paper-status`,
   `paper-report`, `paper-halt`, `paper-resume --confirm`, and
   `paper-auto [--dry-run | --check]`.
@@ -76,7 +77,13 @@ Every command appends one line to `data/private/logs/runs.jsonl`.
 - Multi-asset research: `multi_strategies.py` (`MULTI_CANDIDATES`, rules,
   `capped_inverse_volatility`), `multi_evaluation.py` (selection, holdout,
   rolling and stressed checks, chained drawdowns), `multi_research.py`
-  (report and Markdown), `live_gate.multi_research_gate` (R1 to R5).
+  (`Study`, `run_study`, report and Markdown), `live_gate.multi_research_gate`
+  (R1 to R5).
+- Machine learning (ADR-012, needs the `ml` extra): `ml_dataset.py` (monthly
+  samples from `History` views, volatility-scaled labels), `ml_models.py`
+  (the only module using scikit-learn and floats), `ml_strategies.py`
+  (`ML_CANDIDATES`, cached `Predictor`), `ml_research.py` (`ML_STUDY`). The
+  CLI imports these only for `ml`, so other commands run without them.
 - Paper trading: `alpaca_paper.py` (adapter), `paper_rules.py` (pure rules),
   `paper_trading.py` (orchestration and store), `paper_auto.py`,
   `risk_config.py`, `notify.py`, and `execution_quality.py`.
@@ -114,10 +121,14 @@ Every command appends one line to `data/private/logs/runs.jsonl`.
   16 of 27 windows and trailed both benchmarks when invested. That is final:
   the six candidates and thresholds are not tuned and re-run.
 
-## Next: the owner decides
+- **Phase 7 (ADR-012) is registered and built:** 4 models (ridge and
+  nearest neighbours × eq and iv35) retrained monthly on 13 pooled
+  features, judged by ADR-011's R1 to R5 against B1 and SPY. 22 candidates
+  have now been registered across all ADRs.
 
-MA6 (multi-asset paper trading) is not built, because R1 to R5 did not all
-pass. ADR-011 leaves two options: stop, accepting that a low-cost index fund
-is the better choice, or register Phase 7 (machine learning on this dataset)
-in a new ADR before writing any code for it. Start neither without the
-owner's decision.
+## Next: the owner runs `ml` once
+
+`python -m tradenow ml` on the existing imports, once. Record the result in
+ADR-012 the way ADR-011's was recorded, with no tuning or re-runs. If R1 to R5
+pass, the next step is a paper-trading ADR, then a year of forward testing;
+live trading needs a further ADR after that. If they fail, stop.

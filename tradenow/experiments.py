@@ -66,14 +66,16 @@ def experiment_record(report: dict) -> dict:
 
 
 def multi_experiment_record(report: dict) -> dict:
-    """A `multi` run (ADR-011): the same fields, from the multi-asset report."""
+    """A `multi` (ADR-011) or `ml` (ADR-012) run, from its study report."""
     evaluation, data = report["evaluation"], report["data"]
     return {
         "experiment_id": report["run_id"],
         "recorded_at": datetime.now(timezone.utc).isoformat(),
-        "strategy_version": MULTI_STRATEGY_FAMILY,
+        "strategy_version": report["strategy_family"],
+        "adr": report["adr"],
         "candidates": report["candidates"],
         "candidates_evaluated": len(report["candidates"]),
+        "registered_trials_total": report["registered_trials_total"],
         "selected_hypothesis": evaluation["selection"]["selected_hypothesis"],
         "feature_version": report["feature_version"],
         "feature_code_sha256": report["feature_code_sha256"],

@@ -11,9 +11,10 @@ only earlier bars, so a window's lookbacks reach before its first bar without
 seeing the future. Every run starts from cash (ADR-011 clarification 10).
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from decimal import Decimal
+from typing import Protocol
 
 from .equity_types import FeatureRow
 from .features import compute_features
@@ -24,7 +25,7 @@ from .gld_evaluation import (
     STRESSED_SLIPPAGE_PER_SHARE,
 )
 from .metrics import max_drawdown
-from .multi_strategies import MULTI_CANDIDATES, MultiCandidate
+from .multi_strategies import MULTI_CANDIDATES
 from .portfolio import (
     Allocator,
     PortfolioConfig,
@@ -33,10 +34,25 @@ from .portfolio import (
     simulate_portfolio,
 )
 from .selection import split_points, validation_score
+from .strategies import History
 from .universe import Universe
 
 
 Rows = dict[str, list[FeatureRow]]
+
+
+class PortfolioCandidate(Protocol):
+    """A registered candidate: a name, its recorded parameters, and target
+    weights from History views (ADR-011 rules, ADR-012 models)."""
+
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def parameters(self) -> dict[str, str]: ...
+
+    def __call__(self, views: Mapping[str, History]) -> Mapping[str, Decimal]: ...
+
 ROLL_SPAN = ROLL_DEVELOPMENT_BARS + ROLL_VALIDATION_BARS + ROLL_TEST_BARS
 
 
@@ -63,20 +79,20 @@ def summarize(result: dict) -> dict:
 
 @dataclass(frozen=True)
 class MultiSelection:
-    selected: MultiCandidate | None  # None: no positive validation score (cash)
-    best: MultiCandidate
+    selected: PortfolioCandidate | None  # None: no positive validation score (cash)
+    best: PortfolioCandidate
     best_score: Decimal
     hypotheses: list[dict]
 
 
 def select_multi(universe: Universe, rows: Rows, config: PortfolioConfig,
                  development: tuple[int, int], validation: tuple[int, int],
-                 candidates: tuple[MultiCandidate, ...] = MULTI_CANDIDATES) -> MultiSelection:
+                 candidates: tuple[PortfolioCandidate, ...] = MULTI_CANDIDATES) -> MultiSelection:
     """ADR-010's rule: highest validation return minus maximum drawdown, else cash."""
     if not candidates:
         raise ValueError("At least one candidate is required")
     hypotheses = []
-    best: MultiCandidate | None = None
+    best: PortfolioCandidate | None = None
     best_score: Decimal | None = None
     for candidate in candidates:
         developed = simulate_portfolio(universe, candidate, config, rows, *development)
@@ -130,7 +146,7 @@ def window_starts(bars: int) -> list[int]:
 
 
 def rolling_checks(universe: Universe, rows: Rows, config: PortfolioConfig, bars: int,
-                   candidates: tuple[MultiCandidate, ...] = MULTI_CANDIDATES) -> dict:
+                   candidates: tuple[PortfolioCandidate, ...] = MULTI_CANDIDATES) -> dict:
     """Rolling 504/126/126 windows inside the first `bars` bars; every selection
     uses only bars before its test block."""
     windows, runs, b1_runs, b2_runs = [], [], [], []
@@ -184,7 +200,7 @@ def rolling_checks(universe: Universe, rows: Rows, config: PortfolioConfig, bars
 
 
 def evaluate_multi(universe: Universe, config: PortfolioConfig = PortfolioConfig(),
-                   candidates: tuple[MultiCandidate, ...] = MULTI_CANDIDATES,
+                   candidates: tuple[PortfolioCandidate, ...] = MULTI_CANDIDATES,
                    rows: Rows | None = None) -> dict:
     """Selection on the 60/20 periods, the holdout (information only), and the
     rolling checks before the holdout at normal and stressed slippage."""

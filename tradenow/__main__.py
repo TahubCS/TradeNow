@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import sys
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import date
 from decimal import Decimal, InvalidOperation
@@ -22,7 +23,7 @@ from .gld_research import (
 )
 from .logs import Run, configure_logging, recorded_run
 from .market_data import load_bars
-from .multi_research import run_multi, save_multi_report
+from .multi_research import MULTI_STUDY, Study, run_study, save_multi_report
 from .notify import desktop_notify
 from .offline import MAX_LOCAL_CSV_BYTES, run_local_csv, run_offline, save_offline
 from .paper_auto import GLD_HISTORY_START, Notices, paper_auto
@@ -232,26 +233,27 @@ def gld_main(argv: list[str], run: Run) -> int:
     return 0
 
 
-def multi_main(argv: list[str], run: Run) -> int:
-    """The registered multi-asset research run (ADR-011) on the latest imports."""
-    parser = argparse.ArgumentParser(prog="tradenow multi",
-                                     description="Evaluate the six registered multi-asset "
-                                                 "candidates against B1 and B2")
-    parser.add_argument("--output", type=Path, default=Path("artifacts/multi"))
+def _study_main(argv: list[str], run: Run, command: str, description: str,
+                load_study: Callable[[], Study]) -> int:
+    """A registered multi-asset study on the latest imports: reports, one
+    experiment record per distinct run, and the gate verdict."""
+    parser = argparse.ArgumentParser(prog=f"tradenow {command}", description=description)
+    parser.add_argument("--output", type=Path, default=Path("artifacts") / command)
     args = parser.parse_args(argv)
     settings = load_settings()
     try:
-        report = run_multi(load_universe(settings.tiingo_dir))
+        report = run_study(load_universe(settings.tiingo_dir), load_study())
         json_path, md_path = save_multi_report(report, args.output)
         experiment = record_experiment(report, settings.data_dir / "experiments.jsonl",
                                        multi_experiment_record)
     except (OSError, ValueError, InvalidOperation) as error:
         return _fail(run, error)
     evaluation = report["evaluation"]
-    _emit(run, {"mode": report["mode"], "run_id": report["run_id"],
+    _emit(run, {"mode": report["mode"], "run_id": report["run_id"], "adr": report["adr"],
                 "symbols": report["data"]["symbols"], "bars": report["data"]["bars"],
                 "data_sha256": report["data"]["sha256"],
                 "candidates_evaluated": len(report["candidates"]),
+                "registered_trials_total": report["registered_trials_total"],
                 "rolling_summary": evaluation["rolling_pre_holdout"]["summary"],
                 "rolling_stressed_summary":
                     evaluation["rolling_pre_holdout_stressed"]["summary"],
@@ -263,6 +265,24 @@ def multi_main(argv: list[str], run: Run) -> int:
                 "report_file": str(json_path.resolve()),
                 "readable_report": str(md_path.resolve())})
     return 0
+
+
+def multi_main(argv: list[str], run: Run) -> int:
+    """The registered rule candidates (ADR-011)."""
+    return _study_main(argv, run, "multi", "Evaluate the six registered multi-asset rule "
+                       "candidates against B1 and B2", lambda: MULTI_STUDY)
+
+
+def _ml_study() -> Study:
+    # Loaded only here, so every other command runs without scikit-learn.
+    from .ml_research import ML_STUDY
+    return ML_STUDY
+
+
+def ml_main(argv: list[str], run: Run) -> int:
+    """The registered machine-learning candidates (ADR-012)."""
+    return _study_main(argv, run, "ml", "Evaluate the four registered machine-learning "
+                       "candidates against B1 and B2", _ml_study)
 
 
 def _gld_source(path: Path | None) -> tuple[bytes, str]:
@@ -351,7 +371,7 @@ PAPER_COMMANDS = ("paper-status", "paper-plan", "paper-submit", "paper-halt", "p
 def replay_main(argv: list[str], run: Run) -> int:
     parser = argparse.ArgumentParser(
         description="Replay local MGC bars without network or broker access",
-        epilog=("Use 'gld', 'multi', 'universe', 'offline', 'stress', 'web', or 'tiingo-import' for the research "
+        epilog=("Use 'gld', 'multi', 'ml', 'universe', 'offline', 'stress', 'web', or 'tiingo-import' for the research "
                 "tools, and 'paper-status', 'paper-plan', 'paper-submit', 'paper-halt', "
                 "'paper-resume', 'paper-report', or 'paper-auto' for Alpaca paper trading."),
     )
@@ -400,7 +420,7 @@ def notify_test_main(argv: list[str], run: Run) -> int:
 
 COMMANDS = {"offline": offline_main, "stress": stress_main, "web": web_main,
             "tiingo-import": tiingo_main, "gld": gld_main, "notify-test": notify_test_main,
-            "features": features_main, "universe": universe_main, "multi": multi_main}
+            "features": features_main, "universe": universe_main, "multi": multi_main, "ml": ml_main}
 
 
 def main(argv: list[str] | None = None) -> int:
