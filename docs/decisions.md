@@ -547,6 +547,23 @@ details the rules above leave open; none loosens the gate.
    aligned calendar.
 10. **Fresh start.** Every run or rolling window starts from cash, with no
     halt carried over.
+11. **R5 chaining.** The daily equity curves of the rolling test windows
+    are joined end to end, each window starting from the previous window's
+    ending value, and the maximum drawdown is measured on that daily curve.
+    B1 and B2 are chained the same way.
+12. **R4 stress.** The whole rolling process, selection included, is run
+    again at $0.10 slippage per share, and B1 and B2 also pay $0.10, as in
+    ADR-008's GLD stress test.
+13. **iv35 order.** Inverse 60-day volatility is taken for every asset that
+    has a value and normalized to sum to 1. Any weight above 35% is capped
+    and its excess shared among the uncapped assets in proportion to their
+    weights, repeated until none exceeds 35%. Assets that are out then hold
+    cash. Weights are rounded down to 10 decimal places so they never add
+    up to more than 1. Excess that cannot be placed (fewer than three
+    assets with a value) stays in cash.
+14. **The holdout** (the final 20%) is reported for information only. The
+    gate uses only the rolling windows before it. A tie in validation score
+    goes to the earlier candidate in the registered order, as in ADR-010.
 
 ---
 
