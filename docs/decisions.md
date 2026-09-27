@@ -720,6 +720,90 @@ ADR-011, and ADR-012, all 22 registered candidates have failed.
 
 ---
 
+## ADR-013 — Registered Broad ETF Universe Research
+
+**Status:** Accepted. Registered 2026-09-27, before any of the new ETFs'
+data was downloaded or any code for this study existed.
+
+### Context
+
+ADR-011 and ADR-012 failed on six ETFs. Six assets, four of them stocks,
+bonds, and gold, give little independent evidence. Published trend and
+momentum research uses many unrelated markets. This ADR tests the same
+kinds of rules and models on 35 ETFs across asset classes, with data the
+owner already pays for (Tiingo) and can trade (Alpaca).
+
+### Universe (35 ETFs, chosen by category before any data was seen)
+
+Large, plain funds already trading by April 2006, in this order:
+
+- US stocks: SPY, QQQ, IWM, MDY
+- US sectors: XLB, XLE, XLF, XLI, XLK, XLP, XLU, XLV, XLY
+- Developed countries: EFA, EWJ, EWG, EWU, EWC, EWA
+- Emerging markets: EEM, EWZ, EWT, EWY, FXI
+- Real estate: IYR
+- Bonds: SHY, IEF, TLT, LQD, TIP, AGG
+- Commodities: GLD, SLV, DBC, USO
+
+History runs from the first day all 35 have a Tiingo bar (expected spring
+2006) to the latest import, on one shared calendar, as in ADR-011.
+
+### Data checks before the run
+
+- **Source:** Tiingo's dividend- and split-adjusted prices, imported with
+  `tiingo-import --broad`; symbols already imported are skipped, so a
+  run stopped by a rate limit resumes.
+- **Cross-check (`data-check --broad`):** for every symbol, Tiingo's raw
+  closes are compared with Alpaca's consolidated (SIP) raw daily closes
+  from 2016-01-04 on. A day counts as a mismatch if its close differs by
+  more than 0.5% or it exists in only one source. A symbol passes if its
+  mismatches are at most 1% of the shared days.
+- `broad` refuses to run unless every symbol passed a check of exactly
+  the data it evaluates. If a symbol fails, its data is investigated and
+  re-imported; dropping it needs an amendment here before any result.
+
+### Candidates (10)
+
+Unchanged from ADR-011 unless stated: monthly signals, the 1% band, whole
+shares, costs, the 10% halt, clarifications 1 to 14.
+
+| Candidate | Rule | Sizing |
+|---|---|---|
+| mom_eq, trend_eq, both_eq | ADR-011 rules, per asset | 1/35 each |
+| mom_iv10, trend_iv10, both_iv10 | ADR-011 rules, per asset | inverse 60-day volatility, capped at 10% (clarification 13's method) |
+| xsmom_top25 | the 9 assets (35/4, rounded up) with the highest 12-1 momentum; ties go to the earlier asset in the list | 1/9 each |
+| xsmom_top25_abs | as xsmom_top25, but only those with positive 12-1 momentum; the rest stay cash | 1/9 each |
+| ridge_eq, knn_eq | ADR-012's models, features, labels, and training, pooled across all 35 | 1/35 each |
+
+Assets still warming up are out; weights are rounded down to 10 decimal
+places.
+
+### Method, benchmarks, and gate
+
+Selection, the 60/20/20 split, and the rolling 504/126/126 windows are
+ADR-011's. B1 is an equal-weight buy-and-hold of all 35, rebalanced
+monthly under the same rules; B2 is 100% SPY. The gate is ADR-011's R1 to R5
+and F1 to F4, unchanged.
+
+### Trials and known biases
+
+- With ADR-010 (12), ADR-011 (6), and ADR-012 (4), 32 registered
+  candidates in total.
+- **Survivorship:** every fund here still exists because it succeeded,
+  which flatters every backtest, benchmarks included.
+- **Partly fresh evidence:** the markets are new to this research, but the
+  period is the one already studied, and 6 of the 35 ETFs are ADR-011's.
+
+### What happens after the run
+
+- The result, and the data check, are recorded here and in the
+  experiment log.
+- **If R1 to R5 pass:** a paper-trading ADR, then a year of forward testing
+  (F1 to F4). Live trading needs a further ADR after that.
+- **If they fail:** stop. Nothing is tuned and re-run.
+
+---
+
 ## ADR Template
 
 ### ADR-XXX — Title
