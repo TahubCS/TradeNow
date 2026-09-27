@@ -85,3 +85,26 @@ The system should periodically compare:
 - completed fills.
 
 Any mismatch should block new live orders until reconciled.
+
+## Implemented: GLD on Alpaca paper
+
+`tradenow/alpaca_paper.py` is the broker adapter. It accepts only the paper
+endpoint, blocks redirects, and validates every response into typed records
+before the rest of the system sees it. `tradenow/paper_rules.py` holds the pure
+rules (signal, data cross-check, reconciliation, drawdown, sizing), and
+`tradenow/paper_trading.py` orchestrates them:
+
+```text
+paper-plan: kill switch? -> paper account? -> market closed? -> reconcile
+            -> select strategy (validation only) -> Tiingo signal
+            -> Alpaca SIP cross-check -> drawdown -> saved plan (no order)
+paper-submit --approve ID: kill switch? -> plan unchanged and not expired
+            -> reconcile -> ledger write -> POST with client order ID
+```
+
+The local ledger (`data/private/alpaca/ledger.json`) is the internal position
+record: the sum of filled quantities of the orders this system sent. An order is
+written with status `submitting` before the request. If the request fails, the
+order is looked up by client order ID. A later run marks it `not_found` only
+after Alpaca confirms that it does not exist, so an ambiguous timeout can never
+lead to a second submission.

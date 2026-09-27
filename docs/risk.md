@@ -32,6 +32,19 @@ bar blocks the sale and the simulator retries on a later bar. If the breach is
 on the final bar, the position remains open and the report marks the exit pending.
 The report records the trigger, simulated exit, and maximum closing-equity drawdown.
 
+## Implemented GLD paper-trading controls
+
+Paper trading applies the same 10% rule to Alpaca paper-account equity, measured
+when each plan is made after the close. A breach is stored in the ledger, blocks
+buys permanently for that paper run, and plans a market sale for the next open.
+It is still not a guaranteed stop.
+
+The kill switch (`paper-halt`) is fail-closed. It is written locally before any
+network call, and an unreadable kill-switch file counts as engaged. It is
+engaged automatically when reconciliation fails. Only `paper-resume` clears it,
+and only when Alpaca and the ledger agree. Stale or disagreeing market data
+blocks a plan without engaging the kill switch.
+
 ## Validation Flow
 
 ```text

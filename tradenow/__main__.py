@@ -9,10 +9,13 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
+from .alpaca_paper import PaperClient, load_paper_credentials
 from .market_data import load_bars
 from .gld_research import (MAX_GLD_CSV_BYTES, latest_imported_gld, run_gld_csv,
                            save_gld_report)
 from .offline import MAX_LOCAL_CSV_BYTES, run_local_csv, run_offline, save_offline
+from .paper_trading import (PaperStore, paper_halt, paper_plan, paper_resume,
+                            paper_status, paper_submit)
 from .simulation import Config, simulate
 from .stress import run_stress, save_stress
 from .tiingo import import_gld, load_api_key
@@ -147,7 +150,53 @@ def gld_main(argv: list[str]) -> int:
     return 0
 
 
+def paper_main(command: str, argv: list[str]) -> int:
+    """Alpaca paper commands; only these contact the paper trading API."""
+    parser = argparse.ArgumentParser(prog=f"tradenow {command}")
+    if command == "paper-plan":
+        parser.add_argument("--data", type=Path, help="GLD CSV; defaults to latest Tiingo import")
+    elif command == "paper-submit":
+        parser.add_argument("--approve", required=True, metavar="PLAN_ID",
+                            help="Approve and send the order in this saved plan")
+    elif command == "paper-halt":
+        parser.add_argument("--reason", required=True)
+        parser.add_argument("--flatten", action="store_true",
+                            help="Also sell the whole GLD position at market")
+    elif command == "paper-resume":
+        parser.add_argument("--confirm", action="store_true", required=True)
+    args = parser.parse_args(argv)
+    store = PaperStore()
+    try:
+        client = PaperClient(load_paper_credentials())
+        if command == "paper-status":
+            result = paper_status(client, store)
+        elif command == "paper-plan":
+            if args.data:
+                if args.data.stat().st_size > MAX_GLD_CSV_BYTES:
+                    raise ValueError(f"GLD CSV exceeds {MAX_GLD_CSV_BYTES} bytes")
+                source_bytes, filename = args.data.read_bytes(), args.data.name
+            else:
+                source_bytes, filename = latest_imported_gld()
+            result = paper_plan(client, store, source_bytes, filename)
+        elif command == "paper-submit":
+            result = paper_submit(client, store, args.approve)
+        elif command == "paper-halt":
+            result = paper_halt(client, store, args.reason, args.flatten)
+        else:
+            result = paper_resume(client, store)
+    except (OSError, ValueError, InvalidOperation) as error:
+        print(f"Error: {error}", file=sys.stderr)
+        return 1
+    print(json.dumps(result, indent=2))
+    return 1 if "error" in result else 0
+
+
+PAPER_COMMANDS = ("paper-status", "paper-plan", "paper-submit", "paper-halt", "paper-resume")
+
+
 def main() -> int:
+    if len(sys.argv) > 1 and sys.argv[1] in PAPER_COMMANDS:
+        return paper_main(sys.argv[1], sys.argv[2:])
     if len(sys.argv) > 1 and sys.argv[1] == "offline":
         return offline_main(sys.argv[2:])
     if len(sys.argv) > 1 and sys.argv[1] == "stress":
@@ -161,7 +210,9 @@ def main() -> int:
 
     parser = argparse.ArgumentParser(
         description="Replay local MGC bars without network or broker access",
-        epilog="Use 'gld', 'offline', 'stress', 'web', or 'tiingo-import' for the research tools.",
+        epilog=("Use 'gld', 'offline', 'stress', 'web', or 'tiingo-import' for the research "
+                "tools, and 'paper-status', 'paper-plan', 'paper-submit', 'paper-halt', or "
+                "'paper-resume' for Alpaca paper trading."),
     )
     parser.add_argument("--data", type=Path,
                         default=Path(__file__).resolve().parent.parent / "sample_data" / "mgc_synthetic.csv",

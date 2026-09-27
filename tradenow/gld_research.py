@@ -22,7 +22,7 @@ REQUIRED = {"date", "symbol", "open", "high", "low", "close", "volume",
             "div_cash", "split_factor"}
 
 
-def _bars_from_csv(source_bytes: bytes, config: EquityConfig) -> list[EquityBar]:
+def parse_gld_csv(source_bytes: bytes, config: EquityConfig) -> list[EquityBar]:
     if len(source_bytes) > MAX_GLD_CSV_BYTES:
         raise ValueError(f"GLD CSV exceeds {MAX_GLD_CSV_BYTES} bytes")
     try:
@@ -88,7 +88,7 @@ def _summary(result: dict) -> dict:
 def run_gld_csv(source_bytes: bytes, filename: str = "GLD.csv",
                 config: EquityConfig = EquityConfig(),
                 source: str = "local_gld_csv") -> dict:
-    bars = _bars_from_csv(source_bytes, config)
+    bars = parse_gld_csv(source_bytes, config)
     periods, hypotheses, selected, best_score, holdout = evaluate_candidates(
         bars, config, simulate_equity)
     pre_holdout = periods["development"] + periods["validation"]

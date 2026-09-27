@@ -5,9 +5,10 @@ futures bars and locally imported GLD ETF history. By default it generates a
 fictional contract (`MGC_SIM`), validates its bars,
 evaluates fixed trade hypotheses, selects one on validation data, and replays the
 holdout period through proposals, risk checks, a simulated order manager, and
-portfolio accounting. It cannot submit brokerage orders or contact Databento.
-The MGC research commands remain offline. The separate, manual `tiingo-import`
-command fetches GLD end-of-day ETF data when explicitly run.
+portfolio accounting. The research commands cannot submit brokerage orders or
+contact Databento. The separate, manual `tiingo-import` command fetches GLD
+end-of-day ETF data when explicitly run, and the `paper-*` commands trade GLD in
+an Alpaca **paper** account only after a person approves each order.
 
 ## Run locally
 
@@ -70,6 +71,77 @@ assumes zero interest. The strategy warms up its SMA inside each rolling test,
 while buy-and-hold enters at the first open. These checks expose sensitivity
 and stability, not live trading performance.
 
+## Alpaca paper trading (GLD)
+
+The `paper-*` commands follow the strategy selected by the GLD research in a
+simulated Alpaca paper account. Alpaca paper fills are simulated and can differ
+from live execution. Live trading is not supported: only the
+`https://paper-api.alpaca.markets` endpoint is accepted, and every command
+checks that Alpaca reports a paper (`PA…`) account.
+
+Put paper-only keys in the project-root `.env.local` (see `.env.example`):
+
+```text
+ALPACA_PAPER_ENDPOINT=https://paper-api.alpaca.markets
+ALPACA_PAPER_KEY_ID=...
+ALPACA_PAPER_SECRET_KEY=...
+```
+
+The endpoint may also be written with `/v2`, as Alpaca's dashboard shows it.
+
+Daily routine, after Tiingo publishes the close (evening, New York time):
+
+```powershell
+python -m tradenow tiingo-import --start 2004-11-18 --end 2026-09-28
+python -m tradenow paper-plan
+python -m tradenow paper-submit --approve <plan_id>   # only if the plan has an order
+python -m tradenow paper-status                       # any time; read-only
+```
+
+- **`paper-plan`** reconciles first, selects the strategy on validation data
+  exactly as `gld` does, then computes the SMA signal from the Tiingo import.
+  Alpaca's consolidated (SIP) daily bars are an independent check, not a
+  signal input: planning stops if Alpaca has a newer session than Tiingo, the
+  session dates differ, or any close in the last three weeks differs by more
+  than 0.5%. The plan is saved under `data/private/alpaca/plans/`; nothing is sent.
+- **`paper-submit --approve <plan_id>`** is the approval step. It sends the plan's
+  order only while the market is closed and before the session the plan was made
+  for. Changing a saved plan invalidates its ID. The order is written to the
+  local ledger before it is sent. It has a deterministic client order ID, so a
+  repeated or timed-out submit is looked up instead of sent again.
+- **`paper-halt --reason "..." [--flatten]`** is the kill switch. It first writes
+  `data/private/alpaca/kill_switch.json` (so it works even if Alpaca is
+  unreachable), then cancels every open order, and with `--flatten` sells the
+  whole GLD position at market. While engaged, `paper-plan` and `paper-submit`
+  refuse to run.
+- **`paper-resume --confirm`** clears the kill switch only if the ledger and
+  Alpaca agree.
+
+Reconciliation runs before every plan and submit. Alpaca is the source of truth:
+a GLD position different from the ledger's filled orders, any other symbol, an
+open order this system did not send, or an unresolved submission engages the
+kill switch. Trades made by hand in the paper account therefore stop the system
+until they are undone.
+
+Orders match the simulator as closely as a broker allows: whole shares, day
+orders, a buy sized from **cash** (never margin buying power) at 50% of cash,
+and sells at market. Buys are limit orders 1% above the last close, which
+sizes them slightly smaller than the simulator. If GLD gaps up more than 1%, a
+buy stays unfilled where the simulator would have bought at the open. A day
+order that does not fill at the open can still fill later in the session.
+
+The 10% drawdown rule is the simulator's rule, applied to paper-account
+equity: the highest equity seen at planning time is the peak. A breach blocks
+new entries permanently and plans a market sale for the next open. As in the
+backtest, this is not a guaranteed stop: an overnight gap can make the loss
+larger. To start a fresh paper run, reset the Alpaca paper account and delete
+`data/private/alpaca/`.
+
+If `tiingo-import` runs before Tiingo publishes the latest close, `paper-plan`
+reports `TIINGO_STALE`. Delete that import's three files under
+`data/private/tiingo/` and import again later, because the import refuses to
+repeat a date range.
+
 ## Local dashboard
 
 Install the optional web server once, then open the dashboard in your browser:
@@ -87,7 +159,7 @@ price and equity charts, candidate selection, fills, unfilled orders, and risk
 decisions. MGC runs also show contract transitions and the stress suite.
 Browser-selected files are sent only to the local server,
 analyzed in memory, and not saved by the dashboard. There are no brokerage
-endpoints, Databento calls, or remote assets. The API limits file sizes, seeds,
+endpoints, Databento calls, or remote assets in the dashboard. The API limits file sizes, seeds,
 and bar counts so accidental requests remain bounded. Stop
 the service with Ctrl+C. Uvicorn is the only optional runtime dependency; the
 research commands above remain standard-library-only.
@@ -176,7 +248,9 @@ partial fills, and live or paper brokerage behavior remain outside this model.
 
 - No Databento requests are made, so running this code consumes **zero** Databento credits.
 - Only `tiingo-import` calls Tiingo, using the free EOD GLD endpoints when run manually.
-- No Alpaca or Tradovate integration exists, so running it cannot place a paper or live order.
+- Only `paper-submit` and `paper-halt --flatten` can place orders, and only in an
+  Alpaca paper account. `paper-plan`, `paper-status`, and `paper-resume` call
+  Alpaca read-only. There is no live-trading or Tradovate integration.
 - Brokerage integration and data purchasing will require separate, explicit work.
 
 The broader architecture and gates are in [docs/README.md](docs/README.md).

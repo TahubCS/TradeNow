@@ -112,6 +112,40 @@ connection, and its daily-bar fills cannot establish actual execution quality.
 
 ---
 
+## ADR-006 — Human-Approved GLD Paper Trading on Alpaca
+
+**Status:** Accepted
+
+### Context
+
+GLD research is ready for a broker-specific paper gate. Paper accounts use
+separate credentials, and Alpaca's simulated fills can differ from live execution.
+
+### Decision
+
+Trade GLD only in an Alpaca paper account, with a person approving every order.
+The strategy produces a saved plan; `paper-submit --approve <plan_id>` sends it.
+Signals use the Tiingo history the strategy was tested on. Alpaca SIP daily bars
+only verify that history, because mixing feeds would trade a signal that was
+never backtested. Reconciliation against Alpaca runs before every action, and
+any mismatch engages a persistent kill switch.
+
+### Alternatives Considered
+
+- Unattended submission: rejected until paper history shows stable behavior.
+- Signals from Alpaca bars: rejected because they differ from the backtest source.
+- Opening-auction (`opg`) orders: closer to the simulator's open fill, but
+  deferred until their paper-account behavior is verified; day orders are used.
+
+### Consequences
+
+- No live endpoint can be configured, and a non-paper account is refused.
+- Buys use a 1% limit above the last close, so large upward gaps leave them
+  unfilled and positions are slightly smaller than in the simulator.
+- Manual trades in the paper account stop the system until they are undone.
+
+---
+
 ## ADR Template
 
 ### ADR-XXX — Title
