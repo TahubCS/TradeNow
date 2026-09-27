@@ -21,7 +21,8 @@ from pathlib import Path
 from .equity_types import EquityBar, FeatureRow
 
 
-FEATURE_VERSION = "gld_features_v1"
+# v2 adds the 20/10 Donchian channels used by a registered candidate (ADR-010).
+FEATURE_VERSION = "gld_features_v2"
 TRADING_DAYS = Decimal(252)
 RETURN_WINDOWS = (1, 5, 20, 60, 126, 252)
 SMA_WINDOWS = (10, 20, 50, 200)
@@ -30,7 +31,8 @@ FEATURE_NAMES = (
     *(f"ret_{n}" for n in RETURN_WINDOWS), "mom_6_1", "mom_12_1",
     *(f"sma_{n}" for n in SMA_WINDOWS), "dist_sma_200",
     "rsi_14", "atr_14", "vol_20", "vol_60", "vol_20_median_252",
-    "volume_z_20", "donchian_high_55", "donchian_low_20", "drawdown_252",
+    "volume_z_20", "donchian_high_55", "donchian_low_20", "donchian_high_20",
+    "donchian_low_10", "drawdown_252",
 )
 
 
@@ -120,10 +122,12 @@ def compute_features(bars: list[EquityBar]) -> list[FeatureRow]:
                 values["volume_z_20"] = ((Decimal(bar.volume)
                                           - sum(recent, Decimal(0)) / 20) / deviation)
         # Donchian channels use the previous days only, so today's bar can break them.
-        if t >= 55:
-            values["donchian_high_55"] = max(item.high for item in bars[t - 55:t])
-        if t >= 20:
-            values["donchian_low_20"] = min(item.low for item in bars[t - 20:t])
+        for name, days, pick, field in (("donchian_high_55", 55, max, "high"),
+                                        ("donchian_high_20", 20, max, "high"),
+                                        ("donchian_low_20", 20, min, "low"),
+                                        ("donchian_low_10", 10, min, "low")):
+            if t >= days:
+                values[name] = pick(getattr(item, field) for item in bars[t - days:t])
         if t + 1 >= 252:
             values["drawdown_252"] = _ratio(bar.close, max(closes[t + 1 - 252:t + 1]))
         rows.append(FeatureRow(bar.date, bar.close, values))

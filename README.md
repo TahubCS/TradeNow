@@ -107,9 +107,12 @@ volatility, volume z-score, Donchian channels, drawdown). Each value uses only
 data up to that day's close; a test proves no future bar is ever used.
 
 Use `python -m tradenow gld --data path/to/GLD.csv` for another local Tiingo-format
-CSV. GLD research uses the same fixed candidates and chronological
-development/validation/holdout selection as the MGC workflow, with cash-funded
-whole shares, raw prices, and a share-based risk cap. It rejects files with
+CSV. GLD research chooses among the 12 registered candidates of ADR-010 (SMA
+crossovers, time-series momentum, 200-day trend with and without a
+volatility filter, Donchian breakouts, and volatility-targeted versions),
+using the chronological development/validation/holdout selection. It runs at
+the registered research setting (a full position when in, never margin), with
+cash-funded whole shares and raw prices. It rejects files with
 dividends, splits, or adjusted prices that differ from raw prices until those
 cash flows are modeled. Reports go to `artifacts/gld/`; downloaded bars stay
 under `data/private/`. Historical results do not establish expected returns.

@@ -11,13 +11,12 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .features import FEATURE_VERSION, feature_code_sha256
 from .settings import PROJECT_ROOT, SETTINGS
 
 
 EXPERIMENT_FILE = SETTINGS.data_dir / "experiments.jsonl"
-# Until Phase 2 adds versioned features, the only feature is the SMA inside the simulator.
-FEATURE_VERSION = "inline_sma_v0"
-STRATEGY_FAMILY = "gld_sma_candidates_v1"
+STRATEGY_FAMILY = "gld_adr010_candidates_v1"
 
 
 def code_commit(root: Path = PROJECT_ROOT) -> str | None:
@@ -48,7 +47,7 @@ def experiment_record(report: dict) -> dict:
         "strategy_version": STRATEGY_FAMILY,
         "candidates": [item["name"] for item in research["hypotheses"]],
         "selected_hypothesis": research["selected_hypothesis"],
-        "feature_version": FEATURE_VERSION,
+        "feature_version": FEATURE_VERSION, "feature_code_sha256": feature_code_sha256(),
         "config": report["config"],
         "data": {key: data[key] for key in ("source_name", "sha256", "first_date",
                                             "last_date", "bars")},

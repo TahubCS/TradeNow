@@ -12,15 +12,24 @@ from tradenow.equity import EquityConfig, feature_rows, simulate_equity
 from tradenow.equity_types import FeatureRow
 from tradenow.gld_research import parse_gld_csv, run_gld_csv
 from tradenow.paper_rules import plan_order
-from tradenow.strategies import GLD_CANDIDATES, Decision, History, SmaCross
+from tradenow.strategies import (
+    GLD_CANDIDATES,
+    Decision,
+    Donchian,
+    History,
+    SmaCross,
+    TimeSeriesMomentum,
+    Trend200,
+    VolatilityTarget,
+)
 
 
 # SHA-256 of outputs produced BEFORE the strategy interface existed. The
 # refactored code must reproduce them exactly; a mismatch means a result changed.
 GOLDEN = {
-    "report-paper242": "f303302d1e888308d22d979cd5c0e34a64698a1264ca239d1faae24ae44f6b1b",
-    "report-sample300": "37f42c3955fa5dcca11db80e12d46f5c3a46a66b152334f540b465caf19b3740",
-    "report-wavy1500": "c7c67086a01e59fa4de3e8c1d88e8b981b99ca8918a75c46b735a5c3d597e1bd",
+    "report-paper242": "953d1ac8fcd83e423eb12281d4749e069ea0ae91b6ce9219faa42f10d8022ea0",
+    "report-sample300": "c457eafd64e37130996b28fa4a2e259ab22ea430cb6c594704afc6db6d653f55",
+    "report-wavy1500": "e3dd33054d18ee9b7f1655096e114b352f1a68ee69d1b97c9bd9cb24ed682e6c",
     "sim-paper242-10-30-1.00": "c953b0a47f7013f9df05d4514115fa6b6cb2e07d9dae08f35901258a5a3802e8",
     "sim-paper242-3-10-0.50": "8a534365a0f64632fde0c8ec0e25a6a36b9b1dc09c2448dddef31259cd0e00af",
     "sim-paper242-5-20-0.25": "c71228496b8d2d89eebd9c19fc18c64873e48227bbb4b4eeaabd1f394cc913fe",
@@ -53,12 +62,20 @@ def digest(value: dict) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, indent=1).encode()).hexdigest()
 
 
+# The original three SMA candidates, which the golden outputs were produced with.
+SMA_CANDIDATES = GLD_CANDIDATES[:3]
+
+
 class RegressionTests(unittest.TestCase):
     def test_results_match_the_pre_interface_code_exactly(self):
         inputs = {"sample300": sample_gld_csv(300), "paper242": gld_csv(242),
                    "wavy1500": wavy(1500)}
         for name, data in inputs.items():
-            report = run_gld_csv(data)
+            report = run_gld_csv(data, candidates=SMA_CANDIDATES)
+            # IDs change with any code edit; the gate section is derived from the
+            # evaluation (hashed here) and gained fields later, tested elsewhere.
+            gate = report.pop("live_gate")
+            self.assertEqual(gate["research"]["candidates_evaluated"], 3)
             for key in ("run_id", "code_sha256"):
                 report.pop(key)
             with self.subTest(output=f"report-{name}"):
@@ -119,9 +136,64 @@ class StrategyInterfaceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "do not match"):
             simulate_equity(self.bars, EquityConfig(), SmaCross(3, 10), wrong)
 
-    def test_registered_candidates_are_the_original_sma_set(self):
-        self.assertEqual([item.name for item in GLD_CANDIDATES],
-                         ["sma_3_10", "sma_5_20", "sma_10_30"])
+    def test_registered_candidates_are_exactly_the_adr_010_list(self):
+        self.assertEqual([item.name for item in GLD_CANDIDATES], [
+            "sma_3_10", "sma_5_20", "sma_10_30", "tsmom_6_1", "tsmom_12_1", "trend_200",
+            "trend_200_volfilter", "donchian_55_20", "donchian_20_10", "tsmom_12_1_vt15",
+            "trend_200_vt15", "donchian_55_20_vt15"])
+
+
+def today(close: str = "100", **values: str | None) -> History:
+    row = FeatureRow(date(2026, 1, 5), Decimal(close),
+                     {name: None if value is None else Decimal(value)
+                      for name, value in values.items()})
+    return History([row], 0)
+
+
+class CandidateRuleTests(unittest.TestCase):
+    def test_time_series_momentum(self):
+        rule = TimeSeriesMomentum(12)
+        self.assertEqual(rule.decide(today(mom_12_1="0.05"), False).target, 1)
+        self.assertEqual(rule.decide(today(mom_12_1="0"), True).target, 0)
+        self.assertIsNone(rule.decide(today(mom_12_1=None), False))
+        with self.assertRaises(ValueError):
+            TimeSeriesMomentum(3)
+
+    def test_trend_with_and_without_volatility_filter(self):
+        calm = today(dist_sma_200="0.02", vol_20="0.10", vol_20_median_252="0.15")
+        stormy = today(dist_sma_200="0.02", vol_20="0.20", vol_20_median_252="0.15")
+        self.assertEqual(Trend200(False).decide(stormy, False).target, 1)
+        self.assertEqual(Trend200(True).decide(calm, False).target, 1)
+        self.assertEqual(Trend200(True).decide(stormy, False).target, 0)
+        below = today(dist_sma_200="-0.01", vol_20="0.10", vol_20_median_252="0.15")
+        self.assertEqual(Trend200(True).decide(below, True).target, 0)
+
+    def test_donchian_enters_on_breakout_and_holds_until_breakdown(self):
+        rule = Donchian(55, 20)
+        channel = {"donchian_high_55": "110", "donchian_low_20": "95"}
+        self.assertEqual(rule.decide(today("111", **channel), False).target, 1)
+        self.assertEqual(rule.decide(today("105", **channel), False).target, 0)
+        self.assertEqual(rule.decide(today("105", **channel), True).target, 1)
+        self.assertEqual(rule.decide(today("94", **channel), True).target, 0)
+        with self.assertRaises(ValueError):
+            Donchian(30, 10)
+
+    def test_volatility_target_scales_entries_down_never_up(self):
+        rule = VolatilityTarget(TimeSeriesMomentum(12))
+        volatile = rule.decide(today(mom_12_1="0.1", vol_20="0.30"), False)
+        self.assertEqual(volatile.target, Decimal("0.5000"))
+        calm = rule.decide(today(mom_12_1="0.1", vol_20="0.05"), False)
+        self.assertEqual(calm.target, Decimal("1.0000"))
+        out = rule.decide(today(mom_12_1="-0.1", vol_20="0.30"), False)
+        self.assertEqual(out.target, 0)
+        self.assertEqual(rule.name, "tsmom_12_1_vt15")
+
+    def test_every_candidate_runs_through_the_full_evaluation(self):
+        report = run_gld_csv(wavy(1500))
+        for hypothesis in report["research"]["hypotheses"]:
+            with self.subTest(candidate=hypothesis["name"]):
+                self.assertTrue(hypothesis["validation"]["signals"])
+        self.assertEqual(report["live_gate"]["research"]["candidates_evaluated"], 12)
 
 
 if __name__ == "__main__":

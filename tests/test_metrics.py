@@ -9,6 +9,7 @@ from tests.test_gld_research import sample_gld_csv
 from tradenow.experiments import code_commit, read_experiments, record_experiment
 from tradenow.gld_research import render_gld_markdown, run_gld_csv
 from tradenow.metrics import daily_returns, max_drawdown, performance, trade_statistics
+from tradenow.strategies import GLD_CANDIDATES
 
 
 START = Decimal("100")
@@ -90,7 +91,7 @@ class ReportAndExperimentTests(unittest.TestCase):
         self.assertEqual(len(records), 2)
         record = records[0]
         self.assertEqual(record["experiment_id"], report["run_id"])
-        self.assertEqual(record["candidates"], ["sma_3_10", "sma_5_20", "sma_10_30"])
+        self.assertEqual(record["candidates"], [item.name for item in GLD_CANDIDATES])
         self.assertEqual(record["data"]["sha256"], report["data"]["sha256"])
         self.assertIn(record["results"]["live_gate"]["verdict"], ("PASS", "FAIL"))
 

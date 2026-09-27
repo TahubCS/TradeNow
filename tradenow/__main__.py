@@ -35,6 +35,7 @@ from .paper_trading import (
     paper_submit,
 )
 from .risk_config import load_risk
+from .selection import RESEARCH_CONFIG
 from .settings import load_settings
 from .simulation import Config, simulate
 from .stress import run_stress, save_stress
@@ -160,7 +161,8 @@ def gld_main(argv: list[str], run: Run) -> int:
         else:
             source_bytes, filename = latest_imported_gld()
             source = "tiingo_eod_import"
-        report = run_gld_csv(source_bytes, filename, source=source)
+        # Registered research setting (ADR-010): full position cap, all candidates.
+        report = run_gld_csv(source_bytes, filename, RESEARCH_CONFIG, source)
         json_path, md_path = save_gld_report(report, args.output)
         experiment = record_experiment(report)
     except (OSError, ValueError, InvalidOperation) as error:

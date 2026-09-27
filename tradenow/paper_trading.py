@@ -35,9 +35,9 @@ from .paper_rules import (
     volume_cap,
 )
 from .risk_config import LoadedRisk, default_risk
-from .selection import chronological_split, select_candidate
+from .selection import RESEARCH_CONFIG, chronological_split, select_candidate
 from .settings import SETTINGS
-from .strategies import History
+from .strategies import GLD_CANDIDATES, History
 
 
 STATE_DIR = SETTINGS.alpaca_dir
@@ -654,10 +654,12 @@ def paper_report(store: PaperStore, source_bytes: bytes, source_name: str,
 def live_gate_report(store: PaperStore, source_bytes: bytes, source_name: str,
                      quality_summary: dict, risk: LoadedRisk) -> dict:
     """Both ADR-008 stages from local files, saved so the dashboard can show it."""
-    report = run_gld_csv(source_bytes, source_name, config=risk.config.equity_config())
+    # The research stage uses the registered research setting (ADR-010), not
+    # the paper account's risk settings; the forward stage uses what was traded.
+    report = run_gld_csv(source_bytes, source_name, RESEARCH_CONFIG)
     closes = {bar.date: bar.close for bar in parse_gld_csv(source_bytes,
                                                             risk.config.equity_config())}
-    gate = verdict(research_gate(report["evaluation"]),
+    gate = verdict(research_gate(report["evaluation"], len(GLD_CANDIDATES)),
                    forward_gate(store.equity_history(), closes, _jsonable(quality_summary)))
     gate = _jsonable({**gate, "data_last_date": report["data"]["last_date"],
                       "data_sha256": report["data"]["sha256"]})

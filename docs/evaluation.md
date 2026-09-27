@@ -77,7 +77,7 @@ Track:
 `python -m tradenow gld` evaluates the latest private Tiingo import without
 another API call. The GLD report preserves the original 60/20/20 chronological
 development, validation, and holdout split. Only validation selects one of the
-three fixed SMA candidates; a nonpositive best score selects cash.
+12 registered candidates (ADR-010); a nonpositive best score selects cash.
 
 For the final holdout, compare the selected strategy with zero-interest cash
 and GLD buy-and-hold at both the 50% position cap and 100% allocation. Report

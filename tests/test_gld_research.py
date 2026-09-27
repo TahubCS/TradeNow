@@ -8,6 +8,7 @@ from io import StringIO
 
 from tests.test_tiingo import private_test_dir
 from tradenow.gld_research import latest_imported_gld, run_gld_csv
+from tradenow.strategies import GLD_CANDIDATES
 from tradenow.tiingo import HEADER
 
 
@@ -33,7 +34,8 @@ class GldResearchTests(unittest.TestCase):
         self.assertEqual(report, run_gld_csv(source, "fixture.csv"))
         self.assertEqual(report["mode"], "offline_gld_simulation")
         self.assertEqual(report["data"]["bars"], 180)
-        self.assertEqual(len(report["research"]["hypotheses"]), 3)
+        self.assertEqual([item["name"] for item in report["research"]["hypotheses"]],
+                         [item.name for item in GLD_CANDIDATES])
         periods = report["data"]["periods"]
         self.assertLess(periods["development"]["last_date"],
                         periods["validation"]["first_date"])

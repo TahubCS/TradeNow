@@ -319,6 +319,73 @@ approved it.
 
 ---
 
+## ADR-010 — Registered GLD Strategy Candidates
+
+**Status:** Accepted. Registered before any of the new candidates was
+evaluated on real GLD data.
+
+### Context
+
+The original SMA strategy fails the live-trading gate (ADR-008). Trying many
+ideas on the same history until one looks good would find luck, not skill. So
+the candidates, their parameters, and the evaluation method are fixed here,
+in writing, before the results are known.
+
+### Decision
+
+**The candidate set** (`GLD_CANDIDATES` in `tradenow/strategies.py`), 12 in
+total. A test holds this exact list.
+
+| # | Candidate | Rule |
+|---|---|---|
+| 1-3 | `sma_3_10`, `sma_5_20`, `sma_10_30` | Long when the fast average of closes is above the slow one (the original set) |
+| 4-5 | `tsmom_6_1`, `tsmom_12_1` | Long when the 6- or 12-month return, skipping the latest month, is positive |
+| 6 | `trend_200` | Long when the close is above its 200-day average |
+| 7 | `trend_200_volfilter` | As 6, and only while 20-day volatility is below its 1-year median |
+| 8-9 | `donchian_55_20`, `donchian_20_10` | Enter above the prior 55- (or 20-) day high; exit below the prior 20- (or 10-) day low |
+| 10-12 | `tsmom_12_1_vt15`, `trend_200_vt15`, `donchian_55_20_vt15` | Rules 5, 6, and 8 with entry size min(1, 15% / 20-day annualized volatility) |
+
+Volatility targeting is registered on three fixed rules. Applying it to
+whichever rule looked best would be choosing after seeing the results.
+
+**The method:**
+
+- Selection is unchanged: every window picks the candidate with the highest
+  validation return minus maximum drawdown, or cash if none is positive
+  (`tradenow/selection.py`). The gate therefore judges the whole process,
+  "pick the best of these 12 from past data", not a winner chosen afterwards.
+- Research runs use a fully invested position when a strategy is in
+  (`RESEARCH_CONFIG`: maximum position 100% of cash, never margin), so timing
+  is compared fairly with 100% buy-and-hold. The 10% drawdown halt, $0.01
+  slippage per share, and zero commission stay as they are.
+- Features (`gld_features_v2`) are computed once from all history. Each day's
+  values use only earlier bars, so 6- and 12-month and 200-day lookbacks work
+  inside short test windows without seeing the future. The SMA candidates
+  read only closes inside each window, as before.
+- Entries are sized when opened and are not rebalanced while held.
+- Every `gld` run is logged in the experiment log, and the gate reports how
+  many candidates were evaluated.
+
+### If a candidate passes the research stage
+
+`paper-auto` already selects among these same 12 candidates. To collect
+forward evidence that matches this research, set `max_position_fraction = 1.00`
+in `risk.toml`; the forward count restarts under that setting (ADR-008).
+
+### If none passes
+
+Record the result. The next option is multi-asset trend-following, which
+needs new data, a new simulator, and a new registration ADR. The other option
+is to accept that a low-cost index fund is the better choice.
+
+### Consequences
+
+- Changing, adding, or removing a candidate requires a new ADR, and every
+  earlier result stays in the experiment log.
+- The final GLD holdout has already been viewed and is never evidence.
+
+---
+
 ## ADR Template
 
 ### ADR-XXX — Title

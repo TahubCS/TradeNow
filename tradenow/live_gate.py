@@ -42,8 +42,11 @@ def _check(name: str, passed: bool, detail: str) -> dict:
     return {"check": name, "passed": passed, "detail": detail}
 
 
-def research_gate(evaluation: dict) -> dict:
-    """R1-R4 from a GLD evaluation's rolling windows. The viewed holdout is ignored."""
+def research_gate(evaluation: dict, candidates: int | None = None) -> dict:
+    """R1-R4 from a GLD evaluation's rolling windows. The viewed holdout is ignored.
+
+    candidates is how many strategies the rolling selection chose among; the
+    more there are, the likelier a pass is luck, which the forward stage checks."""
     summary = evaluation["rolling_pre_holdout"]["summary"]
     stressed = evaluation["rolling_pre_holdout_stressed"]["summary"]
     windows = summary["windows"]
@@ -66,7 +69,7 @@ def research_gate(evaluation: dict) -> dict:
                f"slippage: {stressed_strategy}% vs {stressed_hold}%"),
     ]
     return {"stage": "research", "passed": all(item["passed"] for item in checks),
-            "checks": checks}
+            "candidates_evaluated": candidates, "checks": checks}
 
 
 def forward_run(history: list[EquitySnapshot]) -> list[EquitySnapshot]:
@@ -136,6 +139,8 @@ def verdict(research: dict, forward: dict | None) -> dict:
     passed = forward is not None and all(stage["passed"] for stage in stages)
     failing = [item["check"] for stage in stages for item in stage["checks"]
                if not item["passed"]]
+    if forward is None:
+        failing.append("FORWARD_STAGE_NOT_EVALUATED")
     return {"verdict": PASS if passed else FAIL, "failing_checks": failing,
             "research": research, "forward": forward,
             "meaning": ("Passed ADR-008. Live trading may be considered, with minimal capital "

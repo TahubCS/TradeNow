@@ -12,8 +12,14 @@ from pathlib import Path
 from .equity import EquityBar, EquityConfig, validate_equity_bars
 from .gld_evaluation import evaluate_gld
 from .live_gate import research_gate, verdict
-from .selection import chronological_split, run_selected, select_candidate
-from .strategies import GLD_CANDIDATES
+from .selection import (
+    chronological_split,
+    history_rows,
+    run_selected,
+    select_candidate,
+    split_rows,
+)
+from .strategies import GLD_CANDIDATES, Candidate
 from .tiingo import PRIVATE_DIR
 
 
@@ -94,15 +100,21 @@ RESEARCH_CODE = ("equity.py", "equity_types.py", "features.py", "strategies.py",
 
 def run_gld_csv(source_bytes: bytes, filename: str = "GLD.csv",
                 config: EquityConfig = EquityConfig(),
-                source: str = "local_gld_csv") -> dict:
+                source: str = "local_gld_csv",
+                candidates: tuple[Candidate, ...] = GLD_CANDIDATES) -> dict:
     bars = parse_gld_csv(source_bytes, config)
     periods = chronological_split(bars)
-    choice = select_candidate(periods["development"], periods["validation"], config)
+    rows = history_rows(bars, candidates)
+    period_rows = split_rows(rows, len(bars))
+    choice = select_candidate(periods["development"], periods["validation"], config,
+                              candidates, period_rows["development"],
+                              period_rows["validation"])
     hypotheses, best_score = choice.hypotheses, choice.best_score
     selected = None if choice.selected is None else choice.selected.name
-    holdout = run_selected(periods["holdout"], config, choice)
+    holdout = run_selected(periods["holdout"], config, choice, period_rows["holdout"])
     pre_holdout = periods["development"] + periods["validation"]
-    evaluation = evaluate_gld(pre_holdout, periods["holdout"], config, selected, holdout)
+    evaluation = evaluate_gld(pre_holdout, periods["holdout"], config, selected, holdout,
+                              candidates, rows)
     data_hash = hashlib.sha256(source_bytes).hexdigest()
     code_digest = hashlib.sha256()
     for name in RESEARCH_CODE:
@@ -114,7 +126,7 @@ def run_gld_csv(source_bytes: bytes, filename: str = "GLD.csv",
                         for char in basename)[:100] or "GLD.csv"
     run_inputs = {"schema_version": 2, "symbol": "GLD", "source": source,
                   "data_hash": data_hash, "code_hash": code_hash,
-                  "candidates": [[item.name, item.parameters] for item in GLD_CANDIDATES],
+                  "candidates": [[item.name, item.parameters] for item in candidates],
                   "config": {key: str(value) for key, value in vars(config).items()}}
     run_id = hashlib.sha256(json.dumps(run_inputs, sort_keys=True).encode()).hexdigest()[:16]
     return {"schema_version": 2, "mode": "offline_gld_simulation",
@@ -135,7 +147,7 @@ def run_gld_csv(source_bytes: bytes, filename: str = "GLD.csv",
                          "holdout_summary": _summary(holdout)},
             "evaluation": evaluation,
             # Research stage only: forward paper evidence comes from paper-report.
-            "live_gate": verdict(research_gate(evaluation), None),
+            "live_gate": verdict(research_gate(evaluation, len(candidates)), None),
             "limits": ["provider prices are not independently verified",
                        "daily bars cannot verify intraday execution or market impact",
                        "simulated fills and slippage only", "cash-funded long positions only",
@@ -183,6 +195,9 @@ def render_gld_markdown(report: dict) -> str:
     research = report["research"]
     summary = research["holdout_summary"]
     evaluation = report["evaluation"]
+    # The "buy_hold_50pct" benchmark always uses the strategy's own position cap.
+    cap = Decimal(report["config"]["max_position_fraction"]) * 100
+    same_cap = f"Buy and hold, {cap.normalize():f}% allocation (strategy cap)"
     rows = [
         "# GLD offline research report", "",
         f"Run ID: `{report['run_id']}`  ",
@@ -220,7 +235,7 @@ def render_gld_markdown(report: dict) -> str:
             f"Halt triggered {halt['trigger_date']} at {halt['trigger_drawdown_pct']}% "
             f"drawdown ({halt['shares_at_trigger']} shares); {status}.")
     for label, key in (("Selected strategy", "strategy"),
-                       ("Buy and hold, 50% allocation", "buy_hold_50pct"),
+                       (same_cap, "buy_hold_50pct"),
                        ("Buy and hold, 100% allocation", "buy_hold_100pct"),
                        ("Cash, zero interest", "cash")):
         item = evaluation["holdout"][key]
@@ -229,7 +244,7 @@ def render_gld_markdown(report: dict) -> str:
     rows.extend(["", "| Portfolio | Volatility | Sharpe | Sortino | Calmar | Exposure |",
                  "| --- | ---: | ---: | ---: | ---: | ---: |"])
     for label, key in (("Selected strategy", "strategy"),
-                       ("Buy and hold, 50% allocation", "buy_hold_50pct"),
+                       (same_cap, "buy_hold_50pct"),
                        ("Buy and hold, 100% allocation", "buy_hold_100pct")):
         metrics = evaluation["holdout"][key]["metrics"]
         rows.append(f"| {label} | {_na(metrics['annualized_volatility_pct'], '%')} | "

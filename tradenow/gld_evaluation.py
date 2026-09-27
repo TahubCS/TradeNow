@@ -1,12 +1,14 @@
 """Offline GLD benchmarks, cost sensitivity, and pre-holdout rolling checks."""
 
+from collections.abc import Sequence
 from dataclasses import replace
 from decimal import ROUND_DOWN, Decimal
 
 from .equity import EquityBar, EquityConfig, simulate_equity
+from .equity_types import FeatureRow
 from .metrics import equity_performance, performance
 from .selection import run_selected, select_candidate
-from .strategies import candidate_named
+from .strategies import GLD_CANDIDATES, Candidate
 
 
 ROLL_DEVELOPMENT_BARS = 504
@@ -69,7 +71,13 @@ def _compounded(returns_pct) -> str:
     return _pct((growth - 1) * 100)
 
 
-def _rolling_checks(bars: list[EquityBar], config: EquityConfig) -> dict:
+def _rows(rows: Sequence[FeatureRow] | None, start: int, end: int) -> list[FeatureRow] | None:
+    return None if rows is None else list(rows[start:end])
+
+
+def _rolling_checks(bars: list[EquityBar], config: EquityConfig,
+                    candidates: tuple[Candidate, ...] = GLD_CANDIDATES,
+                    rows: Sequence[FeatureRow] | None = None) -> dict:
     """Disjoint test blocks; every selection uses only earlier bars."""
     span = ROLL_DEVELOPMENT_BARS + ROLL_VALIDATION_BARS + ROLL_TEST_BARS
     windows = []
@@ -78,12 +86,16 @@ def _rolling_checks(bars: list[EquityBar], config: EquityConfig) -> dict:
         validation = bars[start + ROLL_DEVELOPMENT_BARS:
                           start + ROLL_DEVELOPMENT_BARS + ROLL_VALIDATION_BARS]
         test = bars[start + ROLL_DEVELOPMENT_BARS + ROLL_VALIDATION_BARS:start + span]
-        choice = select_candidate(development, validation, config)
+        test_start = start + ROLL_DEVELOPMENT_BARS + ROLL_VALIDATION_BARS
+        choice = select_candidate(
+            development, validation, config, candidates,
+            _rows(rows, start, start + ROLL_DEVELOPMENT_BARS),
+            _rows(rows, start + ROLL_DEVELOPMENT_BARS, test_start))
         selected = None if choice.selected is None else choice.selected.name
         best_development_return = next(
             item["development"]["total_return_pct"] for item in choice.hypotheses
             if item["name"] == choice.best.name)
-        result = run_selected(test, config, choice)
+        result = run_selected(test, config, choice, _rows(rows, test_start, start + span))
         benchmark = _buy_and_hold(test, config, config.max_position_fraction)
         full_benchmark = _buy_and_hold(test, config, Decimal(1))
         strategy_return = Decimal(result["total_return_pct"])
@@ -119,13 +131,18 @@ def _rolling_checks(bars: list[EquityBar], config: EquityConfig) -> dict:
 
 
 def evaluate_gld(pre_holdout: list[EquityBar], holdout: list[EquityBar],
-                 config: EquityConfig, selected: str | None, holdout_result: dict) -> dict:
+                 config: EquityConfig, selected: str | None, holdout_result: dict,
+                 candidates: tuple[Candidate, ...] = GLD_CANDIDATES,
+                 rows: Sequence[FeatureRow] | None = None) -> dict:
+    """rows, if given, are feature rows for pre_holdout followed by holdout."""
     """Evaluate a fixed selection; never choose a candidate using holdout bars."""
     days = (holdout[-1].date - holdout[0].date).days
     strategy_equity = Decimal(holdout_result["ending_equity"])
     benchmark_50 = _buy_and_hold(holdout, config, config.max_position_fraction)
     benchmark_100 = _buy_and_hold(holdout, config, Decimal(1))
-    chosen = candidate_named(selected)
+    chosen = next((item for item in candidates if item.name == selected), None)
+    holdout_rows = _rows(rows, len(pre_holdout), len(pre_holdout) + len(holdout))
+    pre_rows = _rows(rows, 0, len(pre_holdout))
     if selected is not None and chosen is None:
         raise ValueError("Selected GLD hypothesis is unknown")
     scenarios = []
@@ -133,7 +150,8 @@ def evaluate_gld(pre_holdout: list[EquityBar], holdout: list[EquityBar],
         slip = config.slippage_per_share + extra
         scenario = replace(config, slippage_per_share=slip, enable_entries=selected is not None)
         result = (holdout_result if extra == 0 else
-                  simulate_equity(holdout, scenario, None if chosen is None else chosen.strategy))
+                  simulate_equity(holdout, scenario, None if chosen is None else chosen.strategy,
+                                  holdout_rows if chosen is not None else None))
         scenarios.append({"slippage_per_share": str(slip),
                           "selected_hypothesis": selected,
                           "total_return_pct": result["total_return_pct"],
@@ -154,11 +172,12 @@ def evaluate_gld(pre_holdout: list[EquityBar], holdout: list[EquityBar],
                          "max_drawdown_pct": "0.000"},
                 "calendar_days": days},
             "slippage_sensitivity": scenarios,
-            "rolling_pre_holdout": _rolling_checks(pre_holdout, config),
+            "rolling_pre_holdout": _rolling_checks(pre_holdout, config, candidates, pre_rows),
             "rolling_pre_holdout_stressed": {
                 "slippage_per_share": str(STRESSED_SLIPPAGE_PER_SHARE),
                 "summary": _rolling_checks(pre_holdout, replace(
-                    config, slippage_per_share=STRESSED_SLIPPAGE_PER_SHARE))["summary"]},
+                    config, slippage_per_share=STRESSED_SLIPPAGE_PER_SHARE),
+                    candidates, pre_rows)["summary"]},
             "notes": ["Buy-and-hold buys at the first holdout open and marks at the last close.",
                       "50% benchmark matches the strategy position cap; 100% is full exposure.",
                       "Cash assumes zero interest. Benchmarks do not use the strategy drawdown halt.",
