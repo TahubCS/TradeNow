@@ -1,13 +1,14 @@
-"""Read-only ASGI dashboard for local synthetic simulations."""
+"""Local ASGI dashboard for offline simulations and in-memory CSV analysis."""
 
 import asyncio
 import csv
 import json
+import re
 from io import StringIO
 from pathlib import Path
 from urllib.parse import parse_qs
 
-from .offline import run_offline
+from .offline import MAX_LOCAL_CSV_BYTES, run_local_csv, run_offline
 from .stress import run_stress
 
 
@@ -30,6 +31,15 @@ def _number(params: dict[str, list[str]], name: str, default: int,
 
 def simulation_view(seed: int, days: int) -> dict:
     report, csv_text = run_offline(seed, days)
+    return _report_view(report, csv_text)
+
+
+def local_simulation_view(source_bytes: bytes, filename: str) -> dict:
+    report, _ = run_local_csv(source_bytes, filename)
+    return _report_view(report, source_bytes.decode("utf-8-sig"))
+
+
+def _report_view(report: dict, csv_text: str) -> dict:
     research = report["research"]
     first_holdout = report["data"]["periods"]["holdout"]["first_date"]
     prices = [{"date": row["date"], "close": float(row["close"])}
@@ -41,12 +51,30 @@ def simulation_view(seed: int, days: int) -> dict:
                   for item in research["hypotheses"]]
     holdout = research["holdout_result"]
     return {"mode": report["mode"], "run_id": report["run_id"],
-            "seed": seed, "days": days, "periods": report["data"]["periods"],
+            "data": {key: report["data"][key] for key in
+                     ("source", "source_name", "contract", "seed", "bars", "sha256")},
+            "days": report["data"]["bars"], "periods": report["data"]["periods"],
             "selected_hypothesis": research["selected_hypothesis"],
             "candidates": candidates, "holdout_summary": research["holdout_summary"],
             "prices": prices, "equity_curve": holdout["equity_curve"],
             "fills": holdout["fills"], "risk_decisions": holdout["risk_decisions"],
             "proposals": holdout["proposals"]}
+
+
+async def _read_csv(receive) -> bytes:
+    chunks = []
+    size = 0
+    while True:
+        message = await receive()
+        if message["type"] != "http.request":
+            raise ValueError("Upload interrupted")
+        chunk = message.get("body", b"")
+        size += len(chunk)
+        if size > MAX_LOCAL_CSV_BYTES:
+            raise ValueError(f"Local CSV exceeds {MAX_LOCAL_CSV_BYTES} bytes")
+        chunks.append(chunk)
+        if not message.get("more_body", False):
+            return b"".join(chunks)
 
 
 async def _respond(send, status: int, body: bytes, content_type: bytes) -> None:
@@ -60,11 +88,34 @@ async def _respond(send, status: int, body: bytes, content_type: bytes) -> None:
 async def app(scope, receive, send) -> None:
     if scope["type"] != "http":
         return
+    path = scope["path"]
+    if path == "/api/simulation/local" and scope["method"] == "POST":
+        headers = dict(scope.get("headers", []))
+        host = headers.get(b"host", b"").decode("ascii", errors="ignore")
+        origin = headers.get(b"origin", b"").decode("ascii", errors="ignore")
+        content_type = headers.get(b"content-type", b"").decode("ascii", errors="ignore")
+        if (not re.fullmatch(r"127\.0\.0\.1(?::\d{1,5})?", host)
+                or origin != f"http://{host}" or content_type != "text/csv"):
+            await _respond(send, 403, b'{"error":"Local CSV requests must come from this dashboard"}',
+                           b"application/json")
+            return
+        try:
+            params = parse_qs(scope.get("query_string", b"").decode("ascii"))
+            filenames = params.get("filename", [])
+            if len(filenames) != 1:
+                raise ValueError("filename must be supplied once")
+            source_bytes = await _read_csv(receive)
+            payload = await asyncio.to_thread(local_simulation_view, source_bytes, filenames[0])
+        except (UnicodeDecodeError, ValueError) as error:
+            await _respond(send, 400, json.dumps({"error": str(error)}).encode(),
+                           b"application/json")
+            return
+        await _respond(send, 200, json.dumps(payload).encode(), b"application/json")
+        return
     if scope["method"] != "GET":
-        await _respond(send, 405, b'{"error":"Read-only service"}', b"application/json")
+        await _respond(send, 405, b'{"error":"Method not allowed"}', b"application/json")
         return
 
-    path = scope["path"]
     if path == "/":
         await _respond(send, 200, HTML_PATH.read_bytes(), b"text/html; charset=utf-8")
         return

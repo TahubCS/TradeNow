@@ -1,4 +1,5 @@
 import unittest
+import hashlib
 from dataclasses import replace
 from decimal import Decimal
 from io import StringIO
@@ -7,9 +8,10 @@ from unittest.mock import patch
 
 from tradenow.execution import ApprovedOrder, SimulatedBroker
 from tradenow.market_data import load_bars, parse_bars
-from tradenow.offline import run_offline
+from tradenow.offline import run_local_csv, run_offline, save_offline
 from tradenow.simulation import Config, simulate
 from tradenow.stress import audit_simulation, run_stress
+from tradenow.synthetic import bars_to_csv, generate_bars
 
 
 SAMPLE = Path(__file__).resolve().parent.parent / "sample_data" / "mgc_synthetic.csv"
@@ -111,6 +113,32 @@ class ResearchTests(unittest.TestCase):
     def test_offline_rejects_too_short_dataset(self):
         with self.assertRaisesRegex(ValueError, "at least 180"):
             run_offline(days=40)
+
+    def test_local_csv_replays_and_preserves_source_bytes(self):
+        source = b"\xef\xbb\xbf" + bars_to_csv(generate_bars(3, 180)).replace("\n", "\r\n").encode()
+        report, original = run_local_csv(source, r"C:\data\mgc-history.csv")
+        self.assertEqual(original, source)
+        self.assertEqual(report["data"]["source"], "local_csv")
+        self.assertEqual(report["data"]["source_name"], "mgc-history.csv")
+        self.assertEqual(report["data"]["sha256"], hashlib.sha256(source).hexdigest())
+        self.assertEqual(report["data"]["bars"], 180)
+        self.assertEqual(report["data"]["contract"], "MGC_SIM")
+        self.assertEqual(report, run_local_csv(source, "mgc-history.csv")[0])
+        with (patch.object(Path, "mkdir"), patch.object(Path, "write_bytes") as write_bytes,
+              patch.object(Path, "write_text")):
+            save_offline(report, original, Path("artifacts/test-output"))
+        write_bytes.assert_called_once_with(source)
+
+    def test_local_csv_rejects_invalid_inputs(self):
+        with self.assertRaisesRegex(ValueError, "at least 180"):
+            run_local_csv(SAMPLE.read_bytes())
+        valid = bars_to_csv(generate_bars(3, 180)).encode()
+        with self.assertRaisesRegex(ValueError, "one contract"):
+            run_local_csv(valid.replace(b"MGC_SIM", b"MGCZ26", 1))
+        with self.assertRaisesRegex(ValueError, "one MGC contract"):
+            run_local_csv(valid.replace(b"MGC_SIM", b"GC_SIM"))
+        with self.assertRaisesRegex(ValueError, "UTF-8"):
+            run_local_csv(b"\xff")
 
     def test_stress_suite_covers_trade_no_trade_and_faults(self):
         report = run_stress()

@@ -7,25 +7,37 @@ import sys
 from pathlib import Path
 
 from .market_data import load_bars
-from .offline import run_offline, save_offline
+from .offline import MAX_LOCAL_CSV_BYTES, run_local_csv, run_offline, save_offline
 from .simulation import Config, simulate
 from .stress import run_stress, save_stress
 
 
 def offline_main(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(description="Run the complete synthetic-data research cycle")
-    parser.add_argument("--seed", type=int, default=3)
-    parser.add_argument("--days", type=int, default=360)
+    parser = argparse.ArgumentParser(description="Run offline research on synthetic or local CSV bars")
+    parser.add_argument("--seed", type=int)
+    parser.add_argument("--days", type=int)
+    parser.add_argument("--data", type=Path, help="Local single-contract daily OHLCV CSV")
     parser.add_argument("--output", type=Path, default=Path("artifacts/offline"))
     args = parser.parse_args(argv)
+    if args.data and (args.seed is not None or args.days is not None):
+        parser.error("--data cannot be combined with --seed or --days")
     try:
-        report, csv_text = run_offline(args.seed, args.days)
+        if args.data:
+            if args.data.stat().st_size > MAX_LOCAL_CSV_BYTES:
+                raise ValueError(f"Local CSV exceeds {MAX_LOCAL_CSV_BYTES} bytes")
+            report, csv_text = run_local_csv(args.data.read_bytes(), args.data.name)
+        else:
+            report, csv_text = run_offline(args.seed if args.seed is not None else 3,
+                                           args.days if args.days is not None else 360)
         bars_path, report_path, markdown_path = save_offline(report, csv_text, args.output)
     except (OSError, ValueError) as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1
 
     print(json.dumps({"mode": report["mode"], "run_id": report["run_id"],
+                      "data_source": report["data"]["source"],
+                      "contract": report["data"]["contract"],
+                      "source_sha256": report["data"]["sha256"],
                       "selected_hypothesis": report["research"]["selected_hypothesis"],
                       "holdout_summary": report["research"]["holdout_summary"],
                       "bars_file": str(bars_path.resolve()),

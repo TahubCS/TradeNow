@@ -56,6 +56,25 @@ data use and a broker-specific paper trading gate before any live trading.
 
 ---
 
+## ADR-003 — Local CSV Before Market-Data Integration
+
+**Status:** Accepted
+
+### Decision
+
+The full research cycle may read a locally supplied, single-contract MGC daily
+CSV without contacting a data provider. Record the original file hash and
+contract in each report. The dashboard processes selected files in memory;
+the CLI saves an exact input copy with its report.
+
+### Consequences
+
+- No Databento credits or brokerage activity are needed for local replay.
+- Source accuracy, licensing, exchange calendar, contract rolls, and margin
+  remain unverified and must be addressed before paper trading.
+
+---
+
 ## ADR Template
 
 ### ADR-XXX — Title

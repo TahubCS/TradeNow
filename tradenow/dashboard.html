@@ -30,6 +30,9 @@
     .primary { color:#081326; background:linear-gradient(125deg,#80aeff,#8ce0d7); }
     .secondary { color:#d9e6ff; background:#263855; border:1px solid #496080; }
     #message { min-height:22px; color:var(--muted); font-size:12px; margin:12px 0 0; }
+    .local-row { border-top:1px solid #334462; margin-top:15px; padding-top:14px; }
+    .local-row input { width:min(100%,350px); font-size:12px; }
+    #sourceInfo { color:var(--muted); font-size:11px; margin:3px 0 0; overflow-wrap:anywhere; }
     .grid-metrics { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:12px; margin-bottom:18px; }
     .card,.panel { background:linear-gradient(160deg,var(--panel),#101827); border:1px solid var(--line); border-radius:16px; }
     .card { padding:17px 18px; min-height:108px; }
@@ -65,18 +68,18 @@
   <main class="shell">
     <header><div class="brand"><span class="brand-mark">T</span> Tradenow <span style="color:#6d819f;font-weight:500">/ research lab</span></div><span class="status-pill">● OFFLINE ONLY</span></header>
     <section class="hero">
-      <div><p class="eyebrow">Micro Gold · Synthetic Research</p><h1>See every decision<br>before any real trade.</h1><p class="intro">Replay fictional gold bars, compare hypotheses, and inspect the holdout portfolio. This local dashboard never contacts a brokerage or market-data provider.</p></div>
-      <form class="controls" id="runForm"><h2>Simulation controls</h2><div class="control-row"><div><label for="seed">Seed</label><input id="seed" type="number" min="0" max="1000000" value="3" required></div><div><label for="days">Bars</label><input id="days" type="number" min="180" max="1000" value="360" required></div><button class="primary" id="runButton" type="submit">Run simulation</button><button class="secondary" id="stressButton" type="button">Stress suite</button></div><p id="message" role="status" aria-live="polite">Ready to replay.</p></form>
+      <div><p class="eyebrow">Micro Gold · Offline Research</p><h1>See every decision<br>before any real trade.</h1><p class="intro">Replay synthetic or locally supplied MGC bars, compare hypotheses, and inspect the holdout portfolio. This dashboard never contacts a brokerage or market-data provider.</p></div>
+      <form class="controls" id="runForm"><h2>Simulation controls</h2><div class="control-row"><div><label for="seed">Seed</label><input id="seed" type="number" min="0" max="1000000" value="3" required></div><div><label for="days">Bars</label><input id="days" type="number" min="180" max="1000" value="360" required></div><button class="primary" id="runButton" type="submit">Run simulation</button><button class="secondary" id="stressButton" type="button">Stress suite</button></div><div class="local-row"><label for="localFile">Local MGC CSV · 180–5,000 bars · up to 1 MB</label><div class="control-row"><input id="localFile" type="file" accept=".csv,text/csv"><button class="secondary" id="localButton" type="button">Analyze local CSV</button></div></div><p id="message" role="status" aria-live="polite">Ready to replay.</p><p id="sourceInfo"></p></form>
     </section>
     <section class="grid-metrics" aria-label="Holdout metrics">
       <div class="card"><div class="label">Holdout P&amp;L</div><div class="value" id="metricPnl">—</div><small>Includes open P&amp;L</small></div>
       <div class="card"><div class="label">Selected</div><div class="value" id="metricStrategy">—</div><small>Validation only</small></div>
       <div class="card"><div class="label">Max drawdown</div><div class="value" id="metricDrawdown">—</div><small>Closing equity</small></div>
       <div class="card"><div class="label">Fills</div><div class="value" id="metricFills">—</div><small>Simulated orders</small></div>
-      <div class="card"><div class="label">End position</div><div class="value" id="metricPosition">—</div><small>MGC_SIM contracts</small></div>
+      <div class="card"><div class="label">End position</div><div class="value" id="metricPosition">—</div><small id="positionContractLabel">MGC_SIM contracts</small></div>
     </section>
     <section class="charts">
-      <article class="panel"><div class="panel-head"><div><h2>Fictional gold price</h2><div class="sub">Holdout close · buy and sell markers</div></div><span class="tag">MGC_SIM</span></div><svg class="chart" id="priceChart" role="img" aria-label="Synthetic gold price chart"></svg><div class="chart-foot" id="priceDates"></div></article>
+      <article class="panel"><div class="panel-head"><div><h2>MGC price</h2><div class="sub">Holdout close · buy and sell markers</div></div><span class="tag" id="contractTag">MGC_SIM</span></div><svg class="chart" id="priceChart" role="img" aria-label="MGC price chart"></svg><div class="chart-foot" id="priceDates"></div></article>
       <article class="panel"><div class="panel-head"><div><h2>Portfolio equity</h2><div class="sub">Marked to each simulated close</div></div><span class="tag">USD · SIMULATED</span></div><svg class="chart" id="equityChart" role="img" aria-label="Portfolio equity chart"></svg><div class="chart-foot" id="equityDates"></div></article>
     </section>
     <section class="tables">
@@ -88,7 +91,7 @@
       <article class="panel" id="stressPanel" hidden><div class="panel-head"><div><h2>Stress suite</h2><div class="sub" id="stressSummary">Synthetic seeds and fault injections</div></div><span class="tag" id="stressStatus">—</span></div><div class="scroll"><table><thead><tr><th>Seed</th><th>Selection</th><th class="right">Holdout P&amp;L</th><th>Status</th></tr></thead><tbody id="stressRows"></tbody></table></div><p class="sub" id="faultSummary" style="margin-top:14px"></p></article>
       <article class="panel" id="guidePanel"><div class="panel-head"><div><h2>How to read this run</h2><div class="sub">One pass from evidence to execution</div></div></div><p style="color:var(--muted);margin:0">Three fixed moving-average hypotheses are measured on development and validation segments. Only validation chooses the holdout strategy. If every score is nonpositive, the system holds cash. Each period starts flat, and the order manager enforces risk approval and deduplicates simulated order IDs.</p><p class="sub" id="periodLabel" style="margin:16px 0 0"></p></article>
     </section>
-    <aside class="warning">SIMULATION ONLY · Prices are fictional. MGC_SIM never expires; margin, real exchange hours, market impact, and brokerage fills are not modeled. No Databento credits or real money are used.</aside>
+    <aside class="warning" id="warningText">SIMULATION ONLY · Prices are fictional. MGC_SIM never expires; margin, real exchange hours, market impact, and brokerage fills are not modeled. No Databento credits or real money are used.</aside>
   </main>
   <script>
     const $ = id => document.getElementById(id);
@@ -109,6 +112,11 @@
     function setMetric(id, value, signed=false){ const el=$(id);el.textContent=value;el.classList.remove('positive','negative');if(signed)el.classList.add(Number(value.replace(/[^0-9.-]/g,''))>=0?'positive':'negative'); }
     function render(run){
       const s=run.holdout_summary;
+      const d=run.data;
+      $('sourceInfo').textContent=`${d.source==='local_csv'?'Local '+d.source_name:'Synthetic seed '+d.seed} · ${d.contract} · SHA-256 ${d.sha256.slice(0,16)}…`;
+      $('contractTag').textContent=d.contract;
+      $('positionContractLabel').textContent=d.contract+' contracts';
+      $('warningText').textContent=d.source==='local_csv'?'LOCAL DATA SIMULATION ONLY · Source accuracy and licensing are not verified. Contract expiry, rolls, margin, exchange hours, market impact, and brokerage fills are not modeled. No Databento credits or real money are used.':'SIMULATION ONLY · Prices are fictional. MGC_SIM never expires; margin, real exchange hours, market impact, and brokerage fills are not modeled. No Databento credits or real money are used.';
       setMetric('metricPnl',money(s.total_pnl),true);setMetric('metricStrategy',run.selected_hypothesis||'NO TRADE');setMetric('metricDrawdown',s.max_drawdown_pct+'%');setMetric('metricFills',String(s.fills));setMetric('metricPosition',String(s.open_contracts));
       $('runId').textContent='RUN '+run.run_id.slice(0,8).toUpperCase();
       chart('priceChart',run.prices,'close','#82a9ff','priceDates',run.fills);
@@ -119,8 +127,9 @@
       const p=run.periods;$('periodLabel').textContent=`Development ${p.development.first_date} → ${p.development.last_date} · Validation ${p.validation.first_date} → ${p.validation.last_date} · Holdout ${p.holdout.first_date} → ${p.holdout.last_date}`;
     }
     async function loadRun(event){if(event)event.preventDefault();const button=$('runButton');button.disabled=true;$('message').textContent='Replaying synthetic bars…';try{const seed=Number($('seed').value),days=Number($('days').value);const response=await fetch(`/api/simulation?seed=${seed}&days=${days}`);const data=await response.json();if(!response.ok)throw Error(data.error||'Simulation failed');render(data);$('message').textContent=`Run ${data.run_id.slice(0,8)} complete · ${data.days} bars · no external calls`; }catch(error){$('message').textContent=error.message;}finally{button.disabled=false;}}
+    async function loadLocal(){const file=$('localFile').files[0];if(!file){$('message').textContent='Choose a local CSV first.';return;}if(file.size>1000000){$('message').textContent='Local CSV exceeds 1 MB.';return;}const button=$('localButton');button.disabled=true;$('message').textContent='Analyzing local CSV in memory…';try{const response=await fetch(`/api/simulation/local?filename=${encodeURIComponent(file.name)}`,{method:'POST',headers:{'Content-Type':'text/csv'},body:file});const data=await response.json();if(!response.ok)throw Error(data.error||'Local analysis failed');render(data);$('message').textContent=`Run ${data.run_id.slice(0,8)} complete · ${data.days} local bars · no external calls`;}catch(error){$('message').textContent=error.message;}finally{button.disabled=false;}}
     async function loadStress(){const button=$('stressButton');button.disabled=true;$('message').textContent='Running 12 synthetic seeds and fault checks…';try{const response=await fetch('/api/stress?seeds=12&days=360');const data=await response.json();if(!response.ok)throw Error(data.error||'Stress suite failed');$('stressPanel').hidden=false;$('guidePanel').hidden=true;$('stressStatus').textContent=data.passed?'PASS':'FAIL';$('stressStatus').className='tag '+(data.passed?'pass':'fail');$('stressSummary').textContent=`${data.seeds} seeds · ${data.coverage.no_trade_selections} no-trade selections`;$('faultSummary').textContent=`${data.fault_cases.filter(c=>c.passed).length}/${data.fault_cases.length} injected faults caught`;clear('stressRows');for(const s of data.seed_runs){const row=document.createElement('tr');cell(row,String(s.seed));cell(row,s.selected_hypothesis||'NO TRADE');cell(row,s.holdout_pnl===undefined?'—':money(s.holdout_pnl),'right');cell(row,s.passed?'PASS':'FAIL',s.passed?'pass':'fail');$('stressRows').appendChild(row);}$('message').textContent=data.passed?'Stress suite passed · synthetic checks only':'Stress suite failed · inspect results';}catch(error){$('message').textContent=error.message;}finally{button.disabled=false;}}
-    $('runForm').addEventListener('submit',loadRun);$('stressButton').addEventListener('click',loadStress);loadRun();
+    $('runForm').addEventListener('submit',loadRun);$('stressButton').addEventListener('click',loadStress);$('localButton').addEventListener('click',loadLocal);loadRun();
   </script>
 </body>
 </html>

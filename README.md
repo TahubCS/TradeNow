@@ -1,11 +1,11 @@
 # Tradenow
 
-This is a complete **offline research workflow** for a fictional Micro Gold-shaped
-contract (`MGC_SIM`). It generates deterministic market bars, validates them,
+This is an **offline research workflow** for Micro Gold-shaped daily bars. By
+default it generates a fictional contract (`MGC_SIM`), validates its bars,
 evaluates fixed trade hypotheses, selects one on validation data, and replays the
 holdout period through proposals, risk checks, a simulated order manager, and
 portfolio accounting. It cannot submit brokerage orders or contact Databento.
-There are no API clients, credentials, or network calls in this project.
+There are no broker or market-data API clients, credentials, or outbound calls.
 
 ## Run locally
 
@@ -30,14 +30,16 @@ python -m venv .venv
 ```
 
 Visit `http://127.0.0.1:8000`. The server binds to your computer only. It runs
-the same seeded simulation in memory and displays price and equity charts,
-candidate selection, fills, risk decisions, and the stress suite. It is read-only:
-there are no brokerage endpoints, Databento calls, uploads, or remote assets.
-The API limits seeds and bar counts so accidental requests remain bounded. Stop
+the same research cycle on generated bars or a CSV selected in the browser and
+displays price and equity charts, candidate selection, fills, risk decisions,
+and the stress suite. Browser-selected files are sent only to the local server,
+analyzed in memory, and not saved by the dashboard. There are no brokerage
+endpoints, Databento calls, or remote assets. The API limits file sizes, seeds,
+and bar counts so accidental requests remain bounded. Stop
 the service with Ctrl+C. Uvicorn is the only optional runtime dependency; the
 research commands above remain standard-library-only.
 
-`python -m tradenow offline` is the main workflow. It saves generated bars, a full
+`python -m tradenow offline` is the synthetic workflow. It saves generated bars, a full
 JSON audit record, and a readable Markdown report under `artifacts/offline/`.
 The default seed exercises selection and simulated fills; seed 7 demonstrates the
 no-trade selection gate. The fixed candidates are SMA 3/10, 5/20, and 10/30.
@@ -45,6 +47,21 @@ Each chronological period starts flat. The validation score is return percentage
 minus maximum drawdown percentage. A nonpositive best score selects no trade.
 The holdout period is never used to select a candidate. None of these synthetic
 results say anything about expected performance in the gold market.
+
+To run the full workflow on a local file, use:
+
+```powershell
+python -m tradenow offline --data data/private/mgc-history.csv
+```
+
+The CSV needs `date,contract,open,high,low,close,volume`, one MGC contract,
+strictly increasing dates, and 180–5,000 daily bars; the file must be at most
+1 MB and UTF-8 encoded. The input is validated before any simulation. The
+report records its original SHA-256, source filename, contract, and the three
+chronological periods; the saved bars file preserves its exact bytes. Keep
+licensed or private data under `data/private/`, which Git ignores. A local file
+does not make results market-valid by itself: contract rolls, margin, calendar,
+and brokerage behavior remain outside the model.
 
 `python -m tradenow stress` replays 12 seeds twice and audits every development,
 validation, and holdout simulation. It also injects missing weekdays, extreme
