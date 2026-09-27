@@ -42,7 +42,8 @@ def local_simulation_view(source_bytes: bytes, filename: str) -> dict:
 def _report_view(report: dict, csv_text: str) -> dict:
     research = report["research"]
     first_holdout = report["data"]["periods"]["holdout"]["first_date"]
-    prices = [{"date": row["date"], "close": float(row["close"])}
+    prices = [{"date": row["date"], "close": float(row["close"]),
+               "contract": row["contract"]}
               for row in csv.DictReader(StringIO(csv_text)) if row["date"] >= first_holdout]
     candidates = [{"name": item["name"],
                    "development_pnl": item["development"]["total_pnl"],
@@ -51,14 +52,18 @@ def _report_view(report: dict, csv_text: str) -> dict:
                   for item in research["hypotheses"]]
     holdout = research["holdout_result"]
     return {"mode": report["mode"], "run_id": report["run_id"],
+            "config": report["config"],
             "data": {key: report["data"][key] for key in
-                     ("source", "source_name", "contract", "seed", "bars", "sha256")},
+                     ("source", "source_name", "contract", "contracts", "seed", "bars",
+                      "sha256", "last_trade_dates_provided", "open_times_provided")},
             "days": report["data"]["bars"], "periods": report["data"]["periods"],
             "selected_hypothesis": research["selected_hypothesis"],
             "candidates": candidates, "holdout_summary": research["holdout_summary"],
             "prices": prices, "equity_curve": holdout["equity_curve"],
             "fills": holdout["fills"], "risk_decisions": holdout["risk_decisions"],
-            "proposals": holdout["proposals"]}
+            "proposals": holdout["proposals"],
+            "unfilled_orders": holdout["unfilled_orders"], "rolls": holdout["rolls"],
+            "open_contract": holdout["open_contract"]}
 
 
 async def _read_csv(receive) -> bytes:

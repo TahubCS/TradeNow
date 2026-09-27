@@ -133,9 +133,11 @@ class ResearchTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "at least 180"):
             run_local_csv(SAMPLE.read_bytes())
         valid = bars_to_csv(generate_bars(3, 180)).encode()
-        with self.assertRaisesRegex(ValueError, "one contract"):
-            run_local_csv(valid.replace(b"MGC_SIM", b"MGCZ26", 1))
-        with self.assertRaisesRegex(ValueError, "one MGC contract"):
+        rows = valid.splitlines()
+        rows[90] = rows[90].replace(b"MGC_SIM", b"MGCZ26")
+        with self.assertRaisesRegex(ValueError, "returns after a roll"):
+            run_local_csv(b"\n".join(rows) + b"\n")
+        with self.assertRaisesRegex(ValueError, "MGC contracts only"):
             run_local_csv(valid.replace(b"MGC_SIM", b"GC_SIM"))
         with self.assertRaisesRegex(ValueError, "UTF-8"):
             run_local_csv(b"\xff")

@@ -4,6 +4,8 @@ import argparse
 import hashlib
 import json
 import sys
+from dataclasses import replace
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from .market_data import load_bars
@@ -16,27 +18,35 @@ def offline_main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="Run offline research on synthetic or local CSV bars")
     parser.add_argument("--seed", type=int)
     parser.add_argument("--days", type=int)
-    parser.add_argument("--data", type=Path, help="Local single-contract daily OHLCV CSV")
+    parser.add_argument("--data", type=Path, help="Local MGC daily OHLCV CSV")
+    parser.add_argument("--max-notional-ratio", default="0.50")
+    parser.add_argument("--initial-margin-rate", default="0.10")
+    parser.add_argument("--maintenance-margin-rate", default="0.08")
     parser.add_argument("--output", type=Path, default=Path("artifacts/offline"))
     args = parser.parse_args(argv)
     if args.data and (args.seed is not None or args.days is not None):
         parser.error("--data cannot be combined with --seed or --days")
     try:
+        config = replace(Config(), max_notional_fraction=Decimal(args.max_notional_ratio),
+                         initial_margin_fraction=Decimal(args.initial_margin_rate),
+                         maintenance_margin_fraction=Decimal(args.maintenance_margin_rate))
         if args.data:
             if args.data.stat().st_size > MAX_LOCAL_CSV_BYTES:
                 raise ValueError(f"Local CSV exceeds {MAX_LOCAL_CSV_BYTES} bytes")
-            report, csv_text = run_local_csv(args.data.read_bytes(), args.data.name)
+            report, csv_text = run_local_csv(args.data.read_bytes(), args.data.name, config)
         else:
             report, csv_text = run_offline(args.seed if args.seed is not None else 3,
-                                           args.days if args.days is not None else 360)
+                                           args.days if args.days is not None else 360,
+                                           config)
         bars_path, report_path, markdown_path = save_offline(report, csv_text, args.output)
-    except (OSError, ValueError) as error:
+    except (OSError, ValueError, InvalidOperation) as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1
 
     print(json.dumps({"mode": report["mode"], "run_id": report["run_id"],
                       "data_source": report["data"]["source"],
                       "contract": report["data"]["contract"],
+                      "contracts": report["data"]["contracts"],
                       "source_sha256": report["data"]["sha256"],
                       "selected_hypothesis": report["research"]["selected_hypothesis"],
                       "holdout_summary": report["research"]["holdout_summary"],

@@ -27,6 +27,7 @@ class WebTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(status, 200)
         self.assertIn(b"OFFLINE ONLY", body)
         self.assertIn(b"priceChart", body)
+        self.assertIn(b"unfilledRows", body)
         status, body = await request("/api/health")
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(body)["mode"], "offline_simulation")
@@ -40,6 +41,9 @@ class WebTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result["equity_curve"]), 36)
         self.assertEqual(len(result["candidates"]), 3)
         self.assertGreater(len(result["proposals"]), 0)
+        self.assertIn("initial_margin_fraction", result["config"])
+        self.assertEqual(result["data"]["contracts"], ["MGC_SIM"])
+        self.assertIn("unfilled_orders", result)
 
     async def test_stress_api_and_read_only_validation(self):
         status, body = await request("/api/stress", "seeds=1&days=180")

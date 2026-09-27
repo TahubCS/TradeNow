@@ -32,24 +32,30 @@ def _summary(result: dict) -> dict:
         "win_rate_pct": win_rate,
         "exposure_pct": str(exposure),
         "fills": len(result["fills"]),
+        "unfilled_orders": len(result["unfilled_orders"]),
+        "rolls": len(result["rolls"]),
         "rejected_orders": sum(not decision["approved"] and
                                decision["action"] != "HALT_NEW_ENTRIES"
                                for decision in result["risk_decisions"]),
         "no_trade_days": sum(proposal["action"] == "NO_TRADE"
                              for proposal in result["proposals"]),
+        "warmup_bars": len(result["equity_curve"]) - len(result["signals"]),
         "halted": result["halted"],
         "open_contracts": result["open_contracts"],
     }
 
 
-def run_offline(seed: int = 3, days: int = 360) -> tuple[dict, str]:
+def run_offline(seed: int = 3, days: int = 360,
+                config: Config = Config()) -> tuple[dict, str]:
     csv_text = bars_to_csv(generate_bars(seed, days))
     bars = parse_bars(StringIO(csv_text))
     validate_synthetic_bars(bars)
-    return _run_research(bars, csv_text.encode("utf-8"), "seeded_synthetic", seed), csv_text
+    return _run_research(bars, csv_text.encode("utf-8"), "seeded_synthetic",
+                         config, seed), csv_text
 
 
-def run_local_csv(source_bytes: bytes, filename: str = "local.csv") -> tuple[dict, bytes]:
+def run_local_csv(source_bytes: bytes, filename: str = "local.csv",
+                  config: Config = Config()) -> tuple[dict, bytes]:
     """Research one local contract; keep its original bytes for exact provenance."""
     if len(source_bytes) > MAX_LOCAL_CSV_BYTES:
         raise ValueError(f"Local CSV exceeds {MAX_LOCAL_CSV_BYTES} bytes")
@@ -57,22 +63,24 @@ def run_local_csv(source_bytes: bytes, filename: str = "local.csv") -> tuple[dic
         csv_text = source_bytes.decode("utf-8-sig")
     except UnicodeDecodeError as error:
         raise ValueError("Local CSV must be UTF-8 encoded") from error
-    bars = parse_bars(StringIO(csv_text))
+    bars = parse_bars(StringIO(csv_text), allow_rolls=True)
     if len(bars) < 180:
         raise ValueError("Offline research requires at least 180 bars")
     if len(bars) > MAX_LOCAL_BARS:
         raise ValueError(f"Local CSV exceeds {MAX_LOCAL_BARS} bars")
-    if not bars[0].contract.upper().startswith("MGC"):
-        raise ValueError("Local CSV must contain one MGC contract")
+    if any(not bar.contract.upper().startswith("MGC") for bar in bars):
+        raise ValueError("Local CSV must contain MGC contracts only")
     basename = filename.replace("\\", "/").split("/")[-1]
     safe_name = "".join(char if char.isalnum() or char in "._- " else "_"
                         for char in basename)[:100] or "local.csv"
-    return _run_research(bars, source_bytes, "local_csv", source_name=safe_name), source_bytes
+    return _run_research(bars, source_bytes, "local_csv", config,
+                         source_name=safe_name), source_bytes
 
 
-def _run_research(bars: list[Bar], source_bytes: bytes, source: str,
+def _run_research(bars: list[Bar], source_bytes: bytes, source: str, base_config: Config,
                   seed: int | None = None, source_name: str | None = None) -> dict:
     days = len(bars)
+    contracts = list(dict.fromkeys(bar.contract for bar in bars))
     development_end = days * 3 // 5
     validation_end = days * 4 // 5
     periods = {
@@ -86,7 +94,7 @@ def _run_research(bars: list[Bar], source_bytes: bytes, source: str,
     best_config: Config | None = None
     best_name: str | None = None
     for name, fast, slow in CANDIDATES:
-        config = replace(Config(), fast_window=fast, slow_window=slow)
+        config = replace(base_config, fast_window=fast, slow_window=slow)
         development = simulate(periods["development"], config)
         validation = simulate(periods["validation"], config)
         score = (Decimal(validation["total_return_pct"])
@@ -114,7 +122,7 @@ def _run_research(bars: list[Bar], source_bytes: bytes, source: str,
     run_inputs = {"schema_version": 1, "source": source, "source_name": source_name,
                   "seed": seed, "days": days,
                   "data_hash": data_hash, "code_hash": code_hash, "candidates": CANDIDATES,
-                  "config": {key: str(value) for key, value in vars(Config()).items()}}
+                  "config": {key: str(value) for key, value in vars(base_config).items()}}
     run_id = hashlib.sha256(json.dumps(run_inputs, sort_keys=True).encode()).hexdigest()[:16]
 
     report = {
@@ -122,9 +130,13 @@ def _run_research(bars: list[Bar], source_bytes: bytes, source: str,
         "mode": "offline_simulation",
         "run_id": run_id,
         "code_sha256": code_hash,
+        "config": {key: str(value) for key, value in vars(base_config).items()},
         "data": {"source": source, "source_name": source_name,
                  "contract": bars[0].contract, "seed": seed,
+                 "contracts": contracts,
                  "bars": days, "sha256": data_hash,
+                 "last_trade_dates_provided": all(bar.last_trade_date for bar in bars),
+                 "open_times_provided": all(bar.open_time_ct for bar in bars),
                  "calendar": ("weekdays_only_no_exchange_holidays" if seed is not None
                               else "not_validated"),
                  "periods": {name: {"first_date": part[0].date.isoformat(),
@@ -138,8 +150,9 @@ def _run_research(bars: list[Bar], source_bytes: bytes, source: str,
                      "holdout_summary": _summary(holdout)},
         "limits": (["fictional prices"] if source == "seeded_synthetic" else
                    ["local source accuracy and licensing not verified"]) +
-                  ["one nonexpiring contract", "daily bars only",
-                   "no futures margin or exchange calendar", "simulated fills only"],
+                  ["daily bars cannot verify intraday execution",
+                   "margin fractions are illustrative, not broker requirements",
+                   "no exchange holiday or delivery calendar", "simulated fills only"],
     }
     return report
 
@@ -153,7 +166,10 @@ def render_markdown(report: dict) -> str:
         f"Run ID: `{report['run_id']}`  ",
         (f"Data: {data['bars']} generated `{data['contract']}` bars, seed {data['seed']}  "
          if data["source"] == "seeded_synthetic" else
-         f"Data: {data['bars']} local `{data['contract']}` bars from `{data['source_name']}`  "),
+         f"Data: {data['bars']} local MGC bars from `{data['source_name']}`  "),
+        f"Contracts: {', '.join(data['contracts'])}  ",
+        f"Last-trade dates provided: {data['last_trade_dates_provided']}; "
+        f"session timestamps provided: {data['open_times_provided']}  ",
         f"Data SHA-256: `{data['sha256']}`  ",
         f"Code SHA-256: `{report['code_sha256']}`  ",
         f"Selected hypothesis: **{research['selected_hypothesis'] or 'NO TRADE'}**",
@@ -182,13 +198,16 @@ def render_markdown(report: dict) -> str:
         f"- Closed trades: {summary['closed_trades']}; fills: {summary['fills']}",
         f"- Exposure: {summary['exposure_pct']}%; open contracts at end: {summary['open_contracts']}",
         f"- Risk halt: {summary['halted']}; rejected orders: {summary['rejected_orders']}",
+        f"- Contract rolls: {summary['rolls']}; unfilled orders: {summary['unfilled_orders']}",
+        f"- Bars without a ready signal: {summary['warmup_bars']}",
         "",
         "## Limits",
         "",
         ("These prices are fictional." if data["source"] == "seeded_synthetic" else
          "Local file provenance is recorded, but its accuracy and licensing are not verified."),
-        "The simulator treats the contract as nonexpiring. Futures margin,",
-        "exchange holidays, intraday stops, and brokerage behavior are not modeled.",
+        "Roll exits use the old contract's last supplied close, with slippage and fees.",
+        "Margin fractions are illustrative. Exchange holidays, intraday stops,",
+        "delivery procedures, and brokerage behavior are not modeled.",
         "No external account was contacted or charged.",
         "",
     ])

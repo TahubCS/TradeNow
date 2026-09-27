@@ -40,11 +40,21 @@ def audit_simulation(result: dict) -> None:
     approved = {(item["date"], item["action"]) for item in result["risk_decisions"]
                 if item["approved"]}
     position = 0
+    position_contract = None
     for fill in fills:
         _require((fill["date"], fill["side"]) in approved, "Fill lacks risk approval")
-        position += 1 if fill["side"] == "BUY" else -1
+        if fill["side"] == "BUY":
+            position += 1
+            position_contract = fill["contract"]
+        else:
+            _require(fill["contract"] == position_contract,
+                     "Exit contract differs from entry")
+            position -= 1
+            position_contract = None
         _require(position in (0, 1), "Position left the allowed range")
     _require(position == result["open_contracts"], "Fill ledger disagrees with position")
+    _require(position_contract == result["open_contract"],
+             "Open contract differs from fill ledger")
     _require(sum(fill["side"] == "SELL" for fill in fills)
              == len(result["closed_trades"]), "Closed trade count disagrees with fills")
 

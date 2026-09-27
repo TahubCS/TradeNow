@@ -10,6 +10,8 @@ class ApprovedOrder:
     date: str
     side: str
     opening_price: Decimal
+    contract: str = ""
+    execution_point: str = "OPEN"
 
 
 class SimulatedBroker:
@@ -21,6 +23,7 @@ class SimulatedBroker:
         self.commission_per_side = commission_per_side
         self.entry_price: Decimal | None = None
         self.entry_date: str | None = None
+        self.entry_contract: str | None = None
         self.fills: list[dict] = []
         self.closed_trades: list[dict] = []
         self._orders: dict[str, tuple[ApprovedOrder, dict]] = {}
@@ -31,7 +34,8 @@ class SimulatedBroker:
             if previous[0] != order:
                 raise ValueError(f"Order ID reused for different order: {order.order_id}")
             return previous[1]
-        if not order.order_id or order.side not in ("BUY", "SELL"):
+        if (not order.order_id or order.side not in ("BUY", "SELL")
+                or order.execution_point not in ("OPEN", "CLOSE")):
             raise ValueError("Invalid simulated order")
         if not order.opening_price.is_finite() or order.opening_price <= 0:
             raise ValueError("Invalid opening price")
@@ -39,26 +43,33 @@ class SimulatedBroker:
             raise ValueError("Cannot buy while already holding a contract")
         if order.side == "SELL" and self.entry_price is None:
             raise ValueError("Cannot sell without an open contract")
+        if (order.side == "SELL" and order.contract and self.entry_contract
+                and order.contract != self.entry_contract):
+            raise ValueError("Cannot close a different contract")
 
         fill_price = (order.opening_price + self.slippage_per_side if order.side == "BUY"
                       else order.opening_price - self.slippage_per_side)
         if fill_price <= 0:
             raise ValueError("Simulated fill price must be positive")
         fill = {"order_id": order.order_id, "date": order.date,
-                "side": order.side, "price": str(fill_price), "contracts": 1}
+                "side": order.side, "price": str(fill_price), "contracts": 1,
+                "contract": order.contract, "execution_point": order.execution_point}
         if order.side == "BUY":
             self.cash -= self.commission_per_side
             self.entry_price = fill_price
             self.entry_date = order.date
+            self.entry_contract = order.contract
         else:
             gross_pnl = (fill_price - self.entry_price) * self.multiplier
             self.cash += gross_pnl - self.commission_per_side
             self.closed_trades.append({"entry_date": self.entry_date,
                                        "exit_date": order.date,
+                                       "contract": self.entry_contract,
                                        "gross_pnl": str(gross_pnl),
                                        "net_pnl": str(gross_pnl - 2 * self.commission_per_side)})
             self.entry_price = None
             self.entry_date = None
+            self.entry_contract = None
         self.fills.append(fill)
         self._orders[order.order_id] = (order, fill)
         return fill

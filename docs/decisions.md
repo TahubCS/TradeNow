@@ -62,16 +62,38 @@ data use and a broker-specific paper trading gate before any live trading.
 
 ### Decision
 
-The full research cycle may read a locally supplied, single-contract MGC daily
-CSV without contacting a data provider. Record the original file hash and
-contract in each report. The dashboard processes selected files in memory;
-the CLI saves an exact input copy with its report.
+The full research cycle may read a locally supplied MGC daily CSV with
+contiguous contract blocks, without contacting a data provider. Record the
+original file hash and contracts in each report. The dashboard processes
+selected files in memory; the CLI saves an exact input copy with its report.
 
 ### Consequences
 
 - No Databento credits or brokerage activity are needed for local replay.
-- Source accuracy, licensing, exchange calendar, contract rolls, and margin
-  remain unverified and must be addressed before paper trading.
+- Source accuracy, licensing, exchange calendar, and brokerage behavior remain
+  unverified and must be addressed before paper trading.
+
+---
+
+## ADR-004 — Explicit Daily-Bar Futures Assumptions
+
+**Status:** Accepted
+
+### Decision
+
+Treat a contract change in a local CSV as a planned roll: close the old
+contract at its last supplied close, charge slippage and commission, and
+warm up the strategy on the new contract. Optional last-trade dates trigger
+an early exit guard. Optional Chicago-time opening timestamps gate fills to
+regular session hours. Use configurable illustrative margin rates, and record
+unfilled orders when volume, session, or stale-data checks fail.
+
+### Consequences
+
+- Contract price jumps across a roll do not become portfolio P&L.
+- Daily bars cannot verify intraday liquidity, exchange holidays, correct DST
+  offsets, delivery procedures, or broker margin and fills. These checks are
+  simulation controls rather than proof that an order could trade.
 
 ---
 

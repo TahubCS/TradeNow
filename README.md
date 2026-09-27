@@ -31,7 +31,8 @@ python -m venv .venv
 
 Visit `http://127.0.0.1:8000`. The server binds to your computer only. It runs
 the same research cycle on generated bars or a CSV selected in the browser and
-displays price and equity charts, candidate selection, fills, risk decisions,
+displays price and equity charts, candidate selection, fills, unfilled orders,
+contract transitions, risk decisions,
 and the stress suite. Browser-selected files are sent only to the local server,
 analyzed in memory, and not saved by the dashboard. There are no brokerage
 endpoints, Databento calls, or remote assets. The API limits file sizes, seeds,
@@ -54,14 +55,39 @@ To run the full workflow on a local file, use:
 python -m tradenow offline --data data/private/mgc-history.csv
 ```
 
-The CSV needs `date,contract,open,high,low,close,volume`, one MGC contract,
-strictly increasing dates, and 180–5,000 daily bars; the file must be at most
-1 MB and UTF-8 encoded. The input is validated before any simulation. The
-report records its original SHA-256, source filename, contract, and the three
+The CSV needs `date,contract,open,high,low,close,volume`, MGC contract names in
+contiguous blocks, strictly increasing dates, and 180–5,000 daily bars; the file
+must be at most 1 MB and UTF-8 encoded. A change in `contract` marks an explicit
+roll. Optional `last_trade_date` (ISO date) and `open_time_ct` (ISO timestamp
+with `-05:00` or `-06:00` offset) columns enable expiry and session checks.
+Dates must precede their contract's `last_trade_date`. For a Monday trading
+date, a regular session open is Sunday at 17:00 Chicago time. The input is
+validated before any simulation. The report records its original SHA-256,
+source filename, contracts, and the three
 chronological periods; the saved bars file preserves its exact bytes. Keep
 licensed or private data under `data/private/`, which Git ignores. A local file
-does not make results market-valid by itself: contract rolls, margin, calendar,
-and brokerage behavior remain outside the model.
+does not make results market-valid by itself.
+
+At a contract change, the simulator exits the old contract at its last supplied
+close with one tick of slippage and commission. It stays flat until the new
+contract has enough bars for the SMA window; the price difference between
+contracts is never booked as profit or loss. If `last_trade_date` is supplied,
+it blocks entries and exits an open position starting five calendar days
+before that date. An untradable roll or expiry exit stops the run instead of
+assuming a fill. Orders at the next open remain unfilled when volume is zero,
+the timestamp is outside regular hours, or the gap from the prior bar exceeds
+seven calendar days. The report and dashboard show these events explicitly.
+
+Initial and maintenance margin are **illustrative** fractions of notional,
+defaulting to 10% and 8%. The existing notional cap defaults to 50% of equity,
+which is stricter than those margin checks for a single position. You can set
+`--max-notional-ratio`, `--initial-margin-rate`, and
+`--maintenance-margin-rate` on `offline` runs to examine other assumptions.
+These are research inputs, not current exchange or broker margin requirements.
+The simulator uses regular [CME MGC contract specifications](https://www.cmegroup.com/content/dam/cmegroup/market-regulation/files/gold-futures-and-options-fact-card.pdf)
+for its size, tick, and session window; [CME explains that margins change](https://www.cmegroup.com/education/articles-and-reports/understanding-margin-changes).
+Daily bars still cannot validate intraday fills, exchange holidays, DST offsets,
+delivery procedures, market impact, or brokerage behavior.
 
 `python -m tradenow stress` replays 12 seeds twice and audits every development,
 validation, and holdout simulation. It also injects missing weekdays, extreme
@@ -91,8 +117,8 @@ breached, it permanently blocks new entries for that run and targets an exit at 
 `open_contracts` shows this explicitly. This is a daily-bar research rule, not an
 intraday stop order.
 
-The synthetic contract never expires. Futures rolls, margin, exchange holidays,
-partial fills, and live or paper brokerage behavior are outside this offline model.
+The synthetic `MGC_SIM` contract has no expiry metadata. Exchange holidays,
+partial fills, and live or paper brokerage behavior remain outside this model.
 
 ## Spending and trading boundary
 
