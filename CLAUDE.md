@@ -121,14 +121,17 @@ Every command appends one line to `data/private/logs/runs.jsonl`.
   16 of 27 windows and trailed both benchmarks when invested. That is final:
   the six candidates and thresholds are not tuned and re-run.
 
-- **Phase 7 (ADR-012) is registered and built:** 4 models (ridge and
-  nearest neighbours × eq and iv35) retrained monthly on 13 pooled
-  features, judged by ADR-011's R1 to R5 against B1 and SPY. 22 candidates
-  have now been registered across all ADRs.
+- **Phase 7 machine learning (ADR-012) failed the gate** (experiment
+  `50421538d55eb807`): +24.2% compounded across 27 rolling windows against
+  +144.9% for B1 and +435.2% for SPY; R1, R2 and R4 failed. It held cash in
+  16 windows, trailed both benchmarks when invested, and lost money in the
+  final validation period, so the holdout held cash. That is final.
+- **All 22 registered candidates (ADR-010, 011, 012) have failed.** The
+  `ml` command needs the `ml` extra; run it with `.venv\Scripts\python.exe`
+  (the system Python has no pip).
 
-## Next: the owner runs `ml` once
+## Next: the owner decides
 
-`python -m tradenow ml` on the existing imports, once. Record the result in
-ADR-012 the way ADR-011's was recorded, with no tuning or re-runs. If R1 to R5
-pass, the next step is a paper-trading ADR, then a year of forward testing;
-live trading needs a further ADR after that. If they fail, stop.
+No strategy has earned paper trading, let alone live money. Any new idea
+needs its own registration ADR before code, and counts as more trials
+against the same history. Start nothing new without the owner's decision.

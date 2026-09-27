@@ -681,6 +681,43 @@ report states this count.
   way rule 1 (paper only) can change.
 - **If they fail:** stop. The candidates are not tuned and re-run.
 
+### Result (2026-09-27)
+
+Evaluated once with `ml` on the same 5,135 common days as ADR-011
+(experiment `50421538d55eb807`, data `f0881e80…`). An earlier attempt
+crashed on import because the system Python lacked scikit-learn; it
+evaluated nothing and logged no experiment. **Verdict: FAIL.** Failing
+checks: R1, R2, R4. R3 and R5 passed.
+
+| Rolling tests before the holdout (27 windows, Oct 2008 to May 2022) | Registered process | B1 equal weight | B2 SPY |
+|---|---|---|---|
+| Compounded return | +24.2% | +144.9% | +435.2% |
+| Compounded return at $0.10 slippage (R4) | +12.1% | +127.0% | +426.2% |
+| Chained maximum drawdown (R5) | 16.6% | 26.1% | 33.7% |
+| Windows beaten | — | 7 of 27 | 3 of 27 |
+
+- **Beat both benchmarks in 2 of 27 windows** (17 needed). 38 closed
+  round trips (30 needed).
+- **Mostly in cash.** In 16 of 27 windows no model had a positive
+  validation score, so the process held cash, missing +52.9% (B1) and
+  +156.4% (B2). The first two windows were cash by design (too little
+  training history).
+- **Behind when invested, too.** In the 11 windows with a selected model
+  (knn_eq 5, ridge_iv35 4, ridge_eq 2), the process made +24.2% against
+  +60.2% for B1 and +108.7% for B2. As with ADR-011, the low drawdown comes
+  mainly from holding cash.
+- **The models lost money in the final validation period** (2018-07 to
+  2022-08): returns from −4.6% to +1.3% with 10.9% to 14.9% drawdowns, so
+  every score was negative and the holdout (2022-08-23 to 2026-09-25) held
+  cash, against +95.1% for B1 and +97.7% for B2. The holdout is information
+  only.
+
+Compared with ADR-011's rules (+11.0%), the models did somewhat better but
+remained far behind both benchmarks, in and out of the market. No model
+trades real money, and no paper-trading ADR follows. As registered, the
+candidates and thresholds are not tuned and re-run. Across ADR-010,
+ADR-011, and ADR-012, all 22 registered candidates have failed.
+
 ---
 
 ## ADR Template
