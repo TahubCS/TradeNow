@@ -3,7 +3,6 @@
 import csv
 import hashlib
 import json
-import re
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from io import StringIO
@@ -20,7 +19,7 @@ from .selection import (
     split_rows,
 )
 from .strategies import GLD_CANDIDATES, Candidate
-from .tiingo import PRIVATE_DIR
+from .tiingo import PRIVATE_DIR, latest_import
 
 
 MAX_GLD_CSV_BYTES = 2_000_000
@@ -156,21 +155,7 @@ def run_gld_csv(source_bytes: bytes, filename: str = "GLD.csv",
 
 def latest_imported_gld(directory: Path = PRIVATE_DIR) -> tuple[bytes, str]:
     """Load the newest private import only if its manifest matches the CSV."""
-    manifests = [path for path in directory.glob("GLD-*.manifest.json")
-                 if re.fullmatch(r"GLD-\d{8}-\d{8}\.manifest\.json", path.name)]
-    if not manifests:
-        raise ValueError("No private GLD import found; run tiingo-import first")
-    manifest_path = max(manifests, key=lambda path: (path.name[13:21], path.name[4:12]))
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    if manifest.get("provider") != "Tiingo" or manifest.get("symbol") != "GLD":
-        raise ValueError("GLD import manifest is invalid")
-    csv_path = manifest_path.with_name(manifest_path.name.replace(".manifest.json", ".csv"))
-    if csv_path.stat().st_size > MAX_GLD_CSV_BYTES:
-        raise ValueError("Private GLD import exceeds size limit")
-    source_bytes = csv_path.read_bytes()
-    if hashlib.sha256(source_bytes).hexdigest() != manifest.get("bars_sha256"):
-        raise ValueError("Private GLD CSV does not match its import manifest")
-    return source_bytes, csv_path.name
+    return latest_import("GLD", directory, MAX_GLD_CSV_BYTES)
 
 
 def _na(value: str | None, suffix: str = "") -> str:

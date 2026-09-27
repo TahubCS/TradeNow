@@ -90,7 +90,22 @@ the result is `UNCHANGED` and nothing is written. Revised history is refused,
 and the earlier import is kept. The key is sent in an authorization header and never written to the
 data files. The import command does not run a backtest or contact a broker.
 
-Replay the newest private import without another Tiingo request:
+For the multi-asset research (ADR-011), import all six registered ETFs (GLD,
+SLV, SPY, EFA, IEF, DBC) with the same protections, then check that they align:
+
+```powershell
+python -m tradenow tiingo-import --universe --start 2004-11-18 --end 2026-09-25
+python -m tradenow universe
+```
+
+`--symbols SPY,IEF` imports a chosen few. Several symbols make two requests
+each; the first failure (for example a rate limit) stops the run and reports
+what was already imported. After every import, only the newest three imports
+of that symbol are kept, which caps disk use. `universe` uses dividend-adjusted
+prices, trims the six histories to the dates they all cover, and refuses any
+missing day inside that range.
+
+Replay the newest private GLD import without another Tiingo request:
 
 ```powershell
 python -m tradenow gld

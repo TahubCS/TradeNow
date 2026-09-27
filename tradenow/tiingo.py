@@ -1,4 +1,9 @@
-"""Manual, GLD-only import from Tiingo's free end-of-day endpoints."""
+"""Manual imports from Tiingo's free end-of-day endpoints, one symbol at a time.
+
+Each import saves the raw response, a normalized CSV with raw and adjusted
+prices, and a manifest with SHA-256 hashes. Refreshing a range is allowed only
+while it is incomplete, and never when earlier raw bars were revised.
+"""
 
 import csv
 import hashlib
@@ -19,6 +24,9 @@ from .settings import PROJECT_ROOT, SETTINGS
 
 
 PRIVATE_DIR = SETTINGS.tiingo_dir
+SYMBOL = re.compile(r"[A-Z]{1,5}")
+# Completed imports kept per symbol; older ones are deleted after each import.
+KEEP_IMPORTS = 3
 logger = logging.getLogger(__name__)
 MAX_RESPONSE_BYTES = 10_000_000
 RAW_FIELDS = ("open", "high", "low", "close", "volume")
@@ -92,9 +100,16 @@ def _volume(value: object, field: str) -> int:
     return value
 
 
-def _normalize_prices(payload: object, start: date, end: date) -> tuple[bytes, int, date, date]:
+def _check_symbol(symbol: str) -> str:
+    if not SYMBOL.fullmatch(symbol):
+        raise ValueError(f"Invalid ticker symbol {symbol!r}")
+    return symbol
+
+
+def _normalize_prices(payload: object, start: date, end: date,
+                      symbol: str = "GLD") -> tuple[bytes, int, date, date]:
     if not isinstance(payload, list) or not payload or len(payload) > 10_000:
-        raise ValueError("Tiingo returned no usable GLD daily bars")
+        raise ValueError(f"Tiingo returned no usable {symbol} daily bars")
     output = StringIO(newline="")
     writer = csv.writer(output, lineterminator="\n")
     writer.writerow(HEADER)
@@ -102,23 +117,23 @@ def _normalize_prices(payload: object, start: date, end: date) -> tuple[bytes, i
     first: date | None = None
     for item in payload:
         if not isinstance(item, dict):
-            raise ValueError("Tiingo returned a malformed GLD bar")
+            raise ValueError(f"Tiingo returned a malformed {symbol} bar")
         bar_date = _day(item.get("date"))
         if (bar_date < start or bar_date > end or bar_date.weekday() >= 5
                 or previous is not None and bar_date <= previous):
-            raise ValueError("Tiingo returned an out-of-range or unordered GLD date")
+            raise ValueError(f"Tiingo returned an out-of-range or unordered {symbol} date")
         raw = [_decimal(item.get(field), field) for field in
                ("open", "high", "low", "close")]
         adjusted = [_decimal(item.get(field), field) for field in
                     ("adjOpen", "adjHigh", "adjLow", "adjClose")]
         for prices in (raw, adjusted):
             if prices[2] > min(prices[0], prices[3]) or prices[1] < max(prices[0], prices[3]):
-                raise ValueError("Tiingo returned an invalid GLD OHLC range")
+                raise ValueError(f"Tiingo returned an invalid {symbol} OHLC range")
         volume = _volume(item.get("volume"), "volume")
         adj_volume = _volume(item.get("adjVolume"), "adjVolume")
         dividend = _decimal(item.get("divCash"), "divCash", positive=False)
         split = _decimal(item.get("splitFactor"), "splitFactor")
-        writer.writerow((bar_date.isoformat(), "GLD", *(str(price) for price in raw),
+        writer.writerow((bar_date.isoformat(), symbol, *(str(price) for price in raw),
                          volume, *(str(price) for price in adjusted), adj_volume,
                          str(dividend), str(split)))
         first = first or bar_date
@@ -133,7 +148,8 @@ def _raw_rows(csv_bytes: bytes) -> dict[str, tuple[Decimal, ...]]:
     return {row["date"]: tuple(Decimal(row[field]) for field in RAW_FIELDS) for row in rows}
 
 
-def _previous_import(paths: tuple[Path, Path, Path], end: date) -> tuple[dict, bytes] | None:
+def _previous_import(paths: tuple[Path, Path, Path], end: date,
+                     symbol: str = "GLD") -> tuple[dict, bytes] | None:
     """The earlier import of this exact range, if it may be refreshed.
 
     A complete import (its last bar is the requested end) is final and is
@@ -151,10 +167,11 @@ def _previous_import(paths: tuple[Path, Path, Path], end: date) -> tuple[dict, b
     csv_bytes = bars_path.read_bytes()
     if (not isinstance(manifest, dict)
             or hashlib.sha256(csv_bytes).hexdigest() != manifest.get("bars_sha256")):
-        raise ValueError("The earlier GLD import does not match its manifest; "
+        raise ValueError(f"The earlier {symbol} import does not match its manifest; "
                          "no API request was made")
     if _day(manifest.get("last_bar")) >= end:
-        raise ValueError("This GLD date range is already imported; no API request was made")
+        raise ValueError(f"This {symbol} date range is already imported; "
+                         "no API request was made")
     return manifest, csv_bytes
 
 
@@ -179,15 +196,17 @@ def _replace_import(paths: tuple[Path, Path, Path], contents: tuple[bytes, bytes
         os.replace(temporary, path)
 
 
-def _paths(start: date, end: date, output_dir: Path) -> tuple[Path, Path, Path]:
-    stem = f"GLD-{start:%Y%m%d}-{end:%Y%m%d}"
+def _paths(start: date, end: date, output_dir: Path,
+           symbol: str = "GLD") -> tuple[Path, Path, Path]:
+    stem = f"{_check_symbol(symbol)}-{start:%Y%m%d}-{end:%Y%m%d}"
     return (output_dir / f"{stem}.csv", output_dir / f"{stem}.raw.json",
             output_dir / f"{stem}.manifest.json")
 
 
-def import_complete(start: date, end: date, output_dir: Path = PRIVATE_DIR) -> bool:
+def import_complete(start: date, end: date, output_dir: Path = PRIVATE_DIR,
+                    symbol: str = "GLD") -> bool:
     """True when this range was already imported through its end date (no request needed)."""
-    manifest_path = _paths(start, end, output_dir)[2]
+    manifest_path = _paths(start, end, output_dir, symbol)[2]
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         return _day(manifest.get("last_bar")) >= end
@@ -195,32 +214,99 @@ def import_complete(start: date, end: date, output_dir: Path = PRIVATE_DIR) -> b
         return False
 
 
+def _manifests(symbol: str, directory: Path) -> list[tuple[str, str, Path]]:
+    """(end, start, path) for each import of a symbol, newest range first."""
+    pattern = re.compile(rf"{_check_symbol(symbol)}-(\d{{8}})-(\d{{8}})\.manifest\.json")
+    found = []
+    for path in directory.glob(f"{symbol}-*.manifest.json"):
+        match = pattern.fullmatch(path.name)
+        if match:
+            found.append((match.group(2), match.group(1), path))
+    return sorted(found, reverse=True)
+
+
+def latest_import(symbol: str, directory: Path = PRIVATE_DIR,
+                  max_bytes: int = 2_000_000) -> tuple[bytes, str]:
+    """The newest import of a symbol, only if its CSV matches its manifest."""
+    manifests = _manifests(symbol, directory)
+    if not manifests:
+        raise ValueError(f"No private {symbol} import found; run tiingo-import first")
+    manifest_path = manifests[0][2]
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("provider") != "Tiingo" or manifest.get("symbol") != symbol:
+        raise ValueError(f"{symbol} import manifest is invalid")
+    csv_path = manifest_path.with_name(manifest_path.name.replace(".manifest.json", ".csv"))
+    if csv_path.stat().st_size > max_bytes:
+        raise ValueError(f"Private {symbol} import exceeds size limit")
+    source_bytes = csv_path.read_bytes()
+    if hashlib.sha256(source_bytes).hexdigest() != manifest.get("bars_sha256"):
+        raise ValueError(f"Private {symbol} CSV does not match its import manifest")
+    return source_bytes, csv_path.name
+
+
+def prune_imports(symbol: str, directory: Path = PRIVATE_DIR,
+                  keep: int = KEEP_IMPORTS) -> list[str]:
+    """Delete all but the newest `keep` imports of a symbol, and superseded copies
+    beyond the newest `keep`. Only exact files of this symbol are ever touched."""
+    if keep < 1:
+        raise ValueError("At least one import must be kept")
+    deleted: list[str] = []
+    for _, _, manifest_path in _manifests(symbol, directory)[keep:]:
+        stem = manifest_path.name[:-len(".manifest.json")]
+        for suffix in (".csv", ".raw.json", ".manifest.json"):
+            path = directory / f"{stem}{suffix}"
+            if path.exists():
+                path.unlink()
+                deleted.append(path.name)
+    archive = directory / "superseded"
+    if archive.is_dir():
+        pattern = re.compile(rf"(\d+|unknown)-{symbol}-\d{{8}}-\d{{8}}\.(csv|raw\.json|manifest\.json)")
+        groups: dict[str, list[Path]] = {}
+        for path in archive.iterdir():
+            match = pattern.fullmatch(path.name)
+            if match:
+                groups.setdefault(path.name.split(".")[0], []).append(path)
+        for name in sorted(groups, reverse=True)[keep:]:
+            for path in groups[name]:
+                path.unlink()
+                deleted.append(f"superseded/{path.name}")
+    if deleted:
+        logger.info("pruned %d old %s import files", len(deleted), symbol)
+    return deleted
+
+
 def import_gld(start: date, end: date, key: str, output_dir: Path = PRIVATE_DIR) -> dict:
+    return import_symbol("GLD", start, end, key, output_dir)
+
+
+def import_symbol(symbol: str, start: date, end: date, key: str,
+                  output_dir: Path = PRIVATE_DIR) -> dict:
     """Fetch one symbol with two requests, validate, then save private source files.
 
     Importing a range again is allowed only while the earlier import stops short
     of the requested end. The new data must contain a newer bar and leave every
     earlier raw bar unchanged; otherwise nothing is written.
     """
+    _check_symbol(symbol)
     if start > end or end > date.today():
         raise ValueError("Expected start <= end <= today")
-    paths = _paths(start, end, output_dir)
+    paths = _paths(start, end, output_dir, symbol)
     bars_path, raw_path, manifest_path = paths
-    previous = _previous_import(paths, end)
+    previous = _previous_import(paths, end, symbol)
 
-    base_url = "https://api.tiingo.com/tiingo/daily/GLD"
+    base_url = f"https://api.tiingo.com/tiingo/daily/{symbol}"
     metadata, _ = _get_json(base_url, key)
-    if not isinstance(metadata, dict) or metadata.get("ticker") != "GLD":
-        raise ValueError("Tiingo did not confirm GLD EOD coverage")
+    if not isinstance(metadata, dict) or str(metadata.get("ticker", "")).upper() != symbol:
+        raise ValueError(f"Tiingo did not confirm {symbol} EOD coverage")
     available_start = _day(metadata.get("startDate"))
     available_end = _day(metadata.get("endDate"))
     if end < available_start or start > available_end:
-        raise ValueError("Requested range is outside Tiingo's GLD coverage")
+        raise ValueError(f"Requested range is outside Tiingo's {symbol} coverage")
 
     query = urlencode({"startDate": start.isoformat(), "endDate": end.isoformat()})
     prices, raw = _get_json(f"{base_url}/prices?{query}", key)
-    csv_bytes, count, first, last = _normalize_prices(prices, start, end)
-    manifest = {"provider": "Tiingo", "product": "EOD", "symbol": "GLD",
+    csv_bytes, count, first, last = _normalize_prices(prices, start, end, symbol)
+    manifest = {"provider": "Tiingo", "product": "EOD", "symbol": symbol,
                 "requested_start": start.isoformat(), "requested_end": end.isoformat(),
                 "provider_start": available_start.isoformat(),
                 "provider_end": available_end.isoformat(),
@@ -234,17 +320,18 @@ def import_gld(start: date, end: date, key: str, output_dir: Path = PRIVATE_DIR)
         previous_manifest, previous_bytes = previous
         previous_last = _day(previous_manifest.get("last_bar"))
         if last <= previous_last:
-            logger.info("Tiingo has no GLD bar after %s yet; kept the earlier import",
-                        previous_last)
-            return {"symbol": "GLD", "result": "UNCHANGED", "bars": previous_manifest.get("bars"),
+            logger.info("Tiingo has no %s bar after %s yet; kept the earlier import",
+                        symbol, previous_last)
+            return {"symbol": symbol, "result": "UNCHANGED",
+                    "bars": previous_manifest.get("bars"),
                     "last_bar": previous_last.isoformat(),
                     "previous_last_bar": previous_last.isoformat(),
                     "bars_file": str(bars_path),
-                    "detail": f"Tiingo has no GLD bar after {previous_last} yet; "
+                    "detail": f"Tiingo has no {symbol} bar after {previous_last} yet; "
                               "nothing was written. Try again later."}
         revised = _revised_dates(previous_bytes, csv_bytes)
         if revised:
-            raise ValueError("Tiingo revised earlier GLD bars (" + ", ".join(revised[:5])
+            raise ValueError(f"Tiingo revised earlier {symbol} bars (" + ", ".join(revised[:5])
                              + "); the earlier import was kept. Review the change before "
                                "importing again.")
         manifest["replaces_fetched_at_utc"] = previous_manifest.get("fetched_at_utc")
@@ -253,10 +340,12 @@ def import_gld(start: date, end: date, key: str, output_dir: Path = PRIVATE_DIR)
     _replace_import(paths, (csv_bytes, raw,
                             (json.dumps(manifest, indent=2) + "\n").encode("utf-8")),
                     None if previous is None else previous[0])
-    logger.info("GLD import %s through %s", result.lower(), last,
+    logger.info("%s import %s through %s", symbol, result.lower(), last,
                 extra={"fields": {"bars": count, "bars_sha256": manifest["bars_sha256"]}})
-    return {"symbol": "GLD", "result": result, "bars": count,
+    pruned = prune_imports(symbol, output_dir)
+    return {"symbol": symbol, "result": result, "bars": count,
             "previous_last_bar": None if previous is None else previous[0].get("last_bar"),
             "first_bar": manifest["first_bar"],
             "last_bar": manifest["last_bar"], "bars_sha256": manifest["bars_sha256"],
-            "bars_file": str(bars_path), "manifest_file": str(manifest_path)}
+            "bars_file": str(bars_path), "manifest_file": str(manifest_path),
+            "pruned_files": len(pruned)}

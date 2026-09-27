@@ -1,0 +1,132 @@
+# TradeNow: notes for Claude Code
+
+A research and **paper-trading-only** system for gold and a small ETF universe.
+It imports daily bars from Tiingo, tests rule-based strategies without
+look-ahead, and trades an Alpaca **paper** account. There is no live mode.
+
+The owner works on Windows (PowerShell) in
+`C:\Users\muhammad tahub\Downloads\Projects\Tradenow`, runs the scheduled
+`paper-auto` there, and prefers a plan in plain language before larger
+changes. When asked for a plan only, do not implement.
+
+## Rules that are never broken
+
+1. **Paper only.** Never add a live endpoint or mode. `TRADENOW_MODE` accepts
+   only `paper`, and the Alpaca client accepts only the paper URL.
+2. **The live-trading gate (ADR-008, `docs/decisions.md`).** No real money
+   unless a strategy beats plain buy-and-hold out of sample, after costs, over
+   enough trades, historically **and** in a year of forward paper trading.
+   Thresholds may be tightened, never loosened, without a new ADR written
+   before the results it would affect.
+3. **Register before testing (ADR-010, ADR-011).** Candidates, parameters,
+   benchmarks, and pass criteria are fixed in an ADR before any result exists.
+   Never tune or re-run registered candidates after seeing their results; a
+   new idea needs a new ADR and counts as more trials.
+4. **No look-ahead.** Strategies read history only through `History`
+   (`tradenow/strategies.py`), which cannot index past today. Features are
+   point-in-time and a test proves it.
+5. **Secrets stay private.** Keys live in the ignored `.env.local`. They are
+   never written to logs (`logs.register_secret` redacts them), plans, reports,
+   commits, or notifications. `data/private/` and `artifacts/` are git-ignored.
+6. **Be honest about odds.** The GLD strategies failed the gate. Do not present
+   anything as likely to make money, and do not give financial advice.
+
+## Commands
+
+```powershell
+python -m pip install -e ".[dev,web]"      # ruff and mypy are pinned in the dev extra
+ruff check tradenow tests
+mypy
+python -m unittest discover -s tests -v    # CI runs these three on Ubuntu and Windows
+```
+
+Main CLI (`python -m tradenow <command>`):
+
+- Data: `tiingo-import --start D --end D [--symbols A,B | --universe]` and
+  `universe` (aligned six-ETF history).
+- Research: `gld` (12 registered GLD candidates plus the gate verdict) and
+  `features --date D`.
+- Paper trading: `paper-plan`, `paper-submit --approve ID`, `paper-status`,
+  `paper-report`, `paper-halt`, `paper-resume --confirm`, and
+  `paper-auto [--dry-run | --check]`.
+- Other: `notify-test`, and `web` (the dashboard).
+- `scripts/schedule-windows.ps1` registers the Windows scheduled tasks.
+
+Every command appends one line to `data/private/logs/runs.jsonl`.
+
+## Where things are
+
+- `data/private/` (set with `TRADENOW_DATA_DIR`) holds `tiingo/` imports,
+  `alpaca/` (ledger, plans, kill switch, equity history, `live_gate.json`),
+  `logs/`, `experiments.jsonl`, and optional `risk.toml`. Copy
+  `risk.example.toml` to create it. Without it the defaults apply: 50%
+  position, 2% daily loss, 10% drawdown, `auto_submit = false`.
+- Research core: `equity_types.py`, `features.py` (`gld_features_v2`),
+  `strategies.py` (interface and `GLD_CANDIDATES`), `selection.py` (single
+  selection rule, `RESEARCH_CONFIG` at the 100% cap), `equity.py`
+  (single-asset simulator), `gld_research.py` and `gld_evaluation.py`,
+  `metrics.py`, `live_gate.py`, and `experiments.py`.
+- Multi-asset data: `tiingo.py` (`import_symbol`, `prune_imports`,
+  `latest_import`) and `universe.py` (`UNIVERSE`, adjusted prices,
+  `align`, `load_universe`).
+- Paper trading: `alpaca_paper.py` (adapter), `paper_rules.py` (pure rules),
+  `paper_trading.py` (orchestration and store), `paper_auto.py`,
+  `risk_config.py`, `notify.py`, and `execution_quality.py`.
+- The MGC futures files (`simulation.py`, `offline.py`, `stress.py`,
+  `market_data.py`, `synthetic.py`) are the older synthetic workflow. Leave
+  them alone unless asked.
+
+## Conventions
+
+- Money and prices are `Decimal`, never float. Pure rules are separate from
+  I/O so they can be tested without the network.
+- Every change comes with tests. `tests/test_strategies.py` holds golden
+  SHA-256 hashes of pre-refactor outputs, so a failure there means a result
+  changed. Investigate; never simply re-bless the hashes.
+- Identical inputs must give byte-identical reports (tested).
+- Keep ruff and mypy clean and CI green on both operating systems.
+- Commits have short imperative subjects with a body explaining why. Work on a
+  branch and merge through a pull request.
+
+## Status (2026-09-27)
+
+- Phases 0 to 5 are done. Phase 6 (unattended paper trading) is built and
+  running as a dry run on the owner's PC. It passes after 20 unattended
+  sessions with no reconciliation failures.
+- **GLD research (ADR-010) failed the gate:** +15.6% compounded across 29
+  rolling windows against +158.7% for holding GLD. That is final.
+- **Multi-asset research (ADR-011) is registered:** six ETFs (GLD, SLV, SPY,
+  EFA, IEF, DBC), dividend-adjusted prices from spring 2006, and 6 candidates
+  (`mom`, `trend`, `both` × `eq`, `iv35`). Rebalancing is monthly. The gate
+  is the strictest option: beat **both** an equal-weight buy-and-hold of the
+  six **and** SPY on return, with no larger drawdown (R1 to R5, then F1 to F4).
+- MA1 (ADR-011) and MA2 (multi-symbol data pipeline) are done.
+
+## Next: MA3, the portfolio simulator (read ADR-011 first)
+
+Build `tradenow/portfolio.py`:
+
+- Cash plus up to six positions in whole shares, never margin, total weight
+  at most 100%.
+- Monthly rebalance: target weights from the month's last close, orders at
+  the next open. Sells before buys. An asset trades only if its target
+  differs by more than 1% of equity.
+- $0.01 slippage per share, zero commission (stress test $0.10), and a 10%
+  portfolio drawdown halt checked daily.
+- Per-asset and portfolio metrics through `metrics.py`.
+- Benchmarks B1 (equal-weight buy-and-hold of the six, rebalanced monthly,
+  same costs) and B2 (100% SPY).
+- Tests use synthetic data only. No multi-asset result on real data exists
+  until MA5.
+
+Then:
+
+- **MA4:** the six strategies (per-asset weights, inverse-volatility sizing
+  over 60-day volatility capped at 35%), selection and rolling windows
+  (504/126/126), gate checks R1 to R5, and a `multi` command writing a report
+  and an experiment record.
+- **MA5:** the owner runs `multi` once on real data, and the result is
+  recorded in ADR-011.
+- **MA6:** only if R1 to R5 pass, multi-asset paper trading (a new ADR),
+  then a year of forward testing. If they fail, stop or register Phase 7 in
+  a new ADR.
