@@ -137,16 +137,17 @@ Every command appends one line to `data/private/logs/runs.jsonl`.
   16 windows, trailed both benchmarks when invested, and lost money in the
   final validation period, so the holdout held cash. That is final.
 - **All 22 registered candidates (ADR-010, 011, 012) have failed.**
-- **ADR-013 (35-ETF broad universe) is registered and built:** 10 candidates
-  (ADR-011 rules with eq and iv10, relative strength top 25% with and
-  without an absolute filter, ridge and knn pooled across 35), same gate.
-  32 registered candidates in total.
+- **Broad universe research (ADR-013) failed the gate** (experiment
+  `171b0cf3e1b519a9`, data check passed for all 35 ETFs): +71.4% compounded
+  across 27 rolling windows against +213.7% for the equal-weight 35 and
+  +435.2% for SPY; R1, R2 and R4 failed. Breadth helped (it was +11% and
+  +24% on six ETFs) and halved the benchmarks' drawdowns, but the gap
+  remains large. That is final.
+- **All 32 registered candidates (ADR-010 to ADR-013) have failed.**
 
-## Next: the owner runs ADR-013 once
+## Next: the owner decides
 
-1. `python -m tradenow tiingo-import --broad --start 2006-01-01 --end <last session>`
-   (repeat if Tiingo's rate limit stops it; finished symbols are skipped).
-2. `python -m tradenow data-check`: every symbol must pass. If one fails,
-   investigate and re-import; dropping it needs an ADR-013 amendment first.
-3. `.venv\Scripts\python.exe -m tradenow broad`, once. Record the result and
-   the data check in ADR-013; nothing is tuned or re-run.
+No strategy has earned paper trading, let alone live money. Any new idea
+needs its own registration ADR before code and counts as more trials; the
+2006 to 2026 history has now been used by four studies. Start nothing new
+without the owner's decision.

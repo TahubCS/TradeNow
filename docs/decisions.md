@@ -802,6 +802,48 @@ and F1 to F4, unchanged.
   (F1 to F4). Live trading needs a further ADR after that.
 - **If they fail:** stop. Nothing is tuned and re-run.
 
+### Data check (2026-09-27)
+
+`data-check` passed for all 35 ETFs (universe `568340977047…`, 5,135
+common days from 2006-04-28 to 2026-09-25): 2,698 shared days per symbol
+since 2016-01-04, at most 5 mismatches for any symbol (SPY and USO), 55 in
+total, and none of them a missing or extra day. Almost all fall on the
+March 2020 circuit-breaker days (the 9th, 12th, 16th, and 18th), when the
+official closing-auction price Tiingo uses differed from the last
+consolidated trade in Alpaca's daily bar.
+
+### Result (2026-09-27)
+
+Evaluated once with `broad` (experiment `171b0cf3e1b519a9`). **Verdict:
+FAIL.** Failing checks: R1, R2, R4. R3 and R5 passed.
+
+| Rolling tests before the holdout (27 windows, Oct 2008 to May 2022) | Registered process | B1 equal weight (35) | B2 SPY |
+|---|---|---|---|
+| Compounded return | +71.4% | +213.7% | +435.2% |
+| Compounded return at $0.10 slippage (R4) | +44.4% | +188.5% | +426.2% |
+| Chained maximum drawdown (R5) | 13.7% | 28.4% | 33.7% |
+| Windows beaten | — | 9 of 27 | 4 of 27 |
+
+- **Beat both benchmarks in 2 of 27 windows** (17 needed). 245 closed
+  round trips (30 needed).
+- **Less time in cash than before:** a candidate was selected in 18 of 27
+  windows (11 in ADR-011 and ADR-012); relative strength was chosen most
+  often (8 windows). The 9 cash windows missed +96.3% (B1) and +106.0% (B2).
+- **When invested,** the process made +71.4% against +59.8% for B1 and
+  +159.9% for B2 over the same 18 windows. Beating B1 in that slice is an
+  after-the-fact view, not a registered test, and is not evidence of an
+  edge; the registered checks compare the whole process.
+- The holdout (information only, 2022-08-23 to 2026-09-25) selected
+  `trend_iv10`: +29.3% with a 5.4% maximum drawdown and 829% turnover,
+  against +70.8% and 12.1% for B1 and +97.7% and 18.7% for B2.
+
+Breadth improved the result (+71% against +11% and +24% for the six-ETF
+studies) and roughly halved the drawdown of either benchmark, but the
+process still returned about a third of B1's and a sixth of SPY's. No
+candidate trades real money, and no paper-trading ADR follows. As
+registered, nothing is tuned and re-run. All 32 registered candidates
+across ADR-010 to ADR-013 have failed.
+
 ---
 
 ## ADR Template
