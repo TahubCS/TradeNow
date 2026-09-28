@@ -145,11 +145,21 @@ def window_starts(bars: int) -> list[int]:
     return list(range(0, bars - ROLL_SPAN + 1, ROLL_TEST_BARS))
 
 
-def rolling_checks(universe: Universe, rows: Rows, config: PortfolioConfig, bars: int,
-                   candidates: tuple[PortfolioCandidate, ...] = MULTI_CANDIDATES) -> dict:
+@dataclass(frozen=True)
+class WindowRun:
+    """One rolling window: its summary row and the full test-block runs."""
+    window: dict
+    strategy: dict
+    b1: dict
+    b2: dict
+
+
+def rolling_runs(universe: Universe, rows: Rows, config: PortfolioConfig, bars: int,
+                 candidates: tuple[PortfolioCandidate, ...] = MULTI_CANDIDATES
+                 ) -> list[WindowRun]:
     """Rolling 504/126/126 windows inside the first `bars` bars; every selection
     uses only bars before its test block."""
-    windows, runs, b1_runs, b2_runs = [], [], [], []
+    runs = []
     dates = universe.dates
     for start in window_starts(bars):
         validation_start = start + ROLL_DEVELOPMENT_BARS
@@ -160,11 +170,8 @@ def rolling_checks(universe: Universe, rows: Rows, config: PortfolioConfig, bars
         result = run_selection(universe, rows, config, choice, test_start, test_end)
         b1 = benchmark_equal_weight(universe, config, test_start, test_end)
         b2 = benchmark_spy(universe, config, test_start, test_end)
-        runs.append(result)
-        b1_runs.append(b1)
-        b2_runs.append(b2)
         strategy = Decimal(result["total_return_pct"])
-        windows.append({
+        runs.append(WindowRun({
             "development_start": dates[start].isoformat(),
             "validation_start": dates[validation_start].isoformat(),
             "test_start": dates[test_start].isoformat(),
@@ -176,27 +183,38 @@ def rolling_checks(universe: Universe, rows: Rows, config: PortfolioConfig, bars
             "b1_return_pct": b1["total_return_pct"], "b2_return_pct": b2["total_return_pct"],
             "closed_trades": len(result["closed_trades"]), "halted": result["halted"],
             "beat_b1": strategy > Decimal(b1["total_return_pct"]),
-            "beat_b2": strategy > Decimal(b2["total_return_pct"])})
+            "beat_b2": strategy > Decimal(b2["total_return_pct"])}, result, b1, b2))
+    return runs
+
+
+def rolling_summary(runs: Sequence[WindowRun]) -> dict:
+    windows = [run.window for run in runs]
+    return {
+        "windows": len(windows),
+        "selected_windows": sum(item["selected_hypothesis"] is not None for item in windows),
+        "positive_windows": sum(Decimal(item["test_return_pct"]) > 0 for item in windows),
+        "beat_b1_windows": sum(item["beat_b1"] for item in windows),
+        "beat_b2_windows": sum(item["beat_b2"] for item in windows),
+        "beat_both_windows": sum(item["beat_b1"] and item["beat_b2"] for item in windows),
+        "closed_trades": sum(item["closed_trades"] for item in windows),
+        "compounded_return_pct": _compounded([item["test_return_pct"] for item in windows]),
+        "compounded_b1_return_pct": _compounded([item["b1_return_pct"] for item in windows]),
+        "compounded_b2_return_pct": _compounded([item["b2_return_pct"] for item in windows]),
+        "chained_max_drawdown_pct": _chained_drawdown([run.strategy for run in runs]),
+        "chained_b1_max_drawdown_pct": _chained_drawdown([run.b1 for run in runs]),
+        "chained_b2_max_drawdown_pct": _chained_drawdown([run.b2 for run in runs])}
+
+
+def rolling_checks(universe: Universe, rows: Rows, config: PortfolioConfig, bars: int,
+                   candidates: tuple[PortfolioCandidate, ...] = MULTI_CANDIDATES) -> dict:
+    """The rolling windows (rolling_runs) as they appear in reports."""
+    runs = rolling_runs(universe, rows, config, bars, candidates)
     return {
         "development_bars": ROLL_DEVELOPMENT_BARS, "validation_bars": ROLL_VALIDATION_BARS,
         "test_bars": ROLL_TEST_BARS, "step_bars": ROLL_TEST_BARS,
         "slippage_per_share": str(config.slippage_per_share),
-        "windows": windows,
-        "summary": {
-            "windows": len(windows),
-            "selected_windows": sum(item["selected_hypothesis"] is not None
-                                    for item in windows),
-            "positive_windows": sum(Decimal(item["test_return_pct"]) > 0 for item in windows),
-            "beat_b1_windows": sum(item["beat_b1"] for item in windows),
-            "beat_b2_windows": sum(item["beat_b2"] for item in windows),
-            "beat_both_windows": sum(item["beat_b1"] and item["beat_b2"] for item in windows),
-            "closed_trades": sum(item["closed_trades"] for item in windows),
-            "compounded_return_pct": _compounded([item["test_return_pct"] for item in windows]),
-            "compounded_b1_return_pct": _compounded([item["b1_return_pct"] for item in windows]),
-            "compounded_b2_return_pct": _compounded([item["b2_return_pct"] for item in windows]),
-            "chained_max_drawdown_pct": _chained_drawdown(runs),
-            "chained_b1_max_drawdown_pct": _chained_drawdown(b1_runs),
-            "chained_b2_max_drawdown_pct": _chained_drawdown(b2_runs)}}
+        "windows": [run.window for run in runs],
+        "summary": rolling_summary(runs)}
 
 
 def evaluate_multi(universe: Universe, config: PortfolioConfig = PortfolioConfig(),
