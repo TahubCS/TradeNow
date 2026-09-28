@@ -77,6 +77,23 @@ def load_mix(path: Path = MIX_FILE) -> Mix:
         data = tomllib.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
         raise ValueError(f"mix.toml does not parse: {error}") from None
-    targets = parse_mix(data)
-    canonical = ";".join(f"{symbol}={weight}" for symbol, weight in targets.items())
+    return mix_from_targets(parse_mix(data))
+
+
+def mix_from_targets(targets: dict[str, Decimal]) -> Mix:
+    """A checked mix; its identity depends only on the symbols and weights."""
+    canonical = ";".join(f"{symbol}={weight.normalize()}" for symbol, weight in targets.items())
     return Mix(targets, hashlib.sha256(canonical.encode()).hexdigest())
+
+
+def parse_targets_option(text: str) -> Mix:
+    """`SPY=0.6,AGG=0.4` from the command line, checked like the file."""
+    targets: dict[str, str] = {}
+    for part in text.split(","):
+        symbol, separator, weight = part.strip().partition("=")
+        if not separator or not symbol:
+            raise ValueError("--targets takes SYMBOL=WEIGHT pairs separated by commas")
+        if symbol.strip().upper() in targets:
+            raise ValueError(f"--targets names {symbol.strip().upper()} twice")
+        targets[symbol.strip().upper()] = weight.strip()
+    return mix_from_targets(parse_mix({"targets": targets}))

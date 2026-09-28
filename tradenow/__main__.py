@@ -30,6 +30,8 @@ from .gld_research import (
 )
 from .logs import Run, configure_logging, recorded_run
 from .market_data import load_bars
+from .mix_config import load_mix, parse_targets_option
+from .mix_preview import preview, render_preview
 from .multi_research import MULTI_STUDY, Study, run_study, save_multi_report
 from .multi_strategies import MULTI_CANDIDATES
 from .notify import desktop_notify
@@ -416,6 +418,47 @@ def risk_main(argv: list[str], run: Run) -> int:
     return 0
 
 
+def mix_preview_main(argv: list[str], run: Run) -> int:
+    """How a fixed mix behaved historically (ADR-015, information only)."""
+    parser = argparse.ArgumentParser(prog="tradenow mix-preview",
+                                     description="Show how a fixed mix behaved historically; "
+                                                 "information only")
+    which = parser.add_mutually_exclusive_group()
+    which.add_argument("--targets", help="Try a mix without the file, e.g. SPY=0.6,AGG=0.4")
+    which.add_argument("--mix", type=Path, help="A mix file (default: data/private/mix.toml)")
+    parser.add_argument("--output", type=Path, default=Path("artifacts") / "mix")
+    args = parser.parse_args(argv)
+    settings = load_settings()
+    try:
+        mix = (parse_targets_option(args.targets) if args.targets
+               else load_mix(args.mix or settings.data_dir / "mix.toml"))
+        symbols = tuple(mix.targets) + (() if "SPY" in mix.targets else ("SPY",))
+        try:
+            universe = load_universe(settings.tiingo_dir, symbols)
+        except ValueError as error:
+            raise ValueError(f"{error}. Import missing ETFs with: python -m tradenow "
+                             f"tiingo-import --symbols {','.join(symbols)} --start 2006-01-01 "
+                             "--end <last session>") from None
+        report = preview(universe, mix)
+        args.output.mkdir(parents=True, exist_ok=True)
+        stem = f"preview-{mix.sha256[:12]}"
+        json_path, md_path = args.output / f"{stem}.json", args.output / f"{stem}.md"
+        json_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+        md_path.write_text(render_preview(report), encoding="utf-8")
+    except (OSError, ValueError, InvalidOperation) as error:
+        return _fail(run, error)
+    keys = ("total_return_pct", "annualized_return_pct", "annualized_volatility_pct",
+            "max_drawdown_pct", "worst_year", "best_year")
+    _emit(run, {"mode": report["mode"], "information_only": True, "mix": report["mix"],
+                "cash_weight": report["cash_weight"], "first_date": report["first_date"],
+                "last_date": report["last_date"],
+                "mix_result": {key: report["mix_result"][key] for key in keys},
+                "worst_drawdown": report["mix_result"]["worst_drawdown"],
+                "spy_alone": {key: report["spy_alone"][key] for key in keys},
+                "readable_report": str(md_path.resolve())})
+    return 0
+
+
 def ml_main(argv: list[str], run: Run) -> int:
     """The registered machine-learning candidates (ADR-012)."""
     return _study_main(argv, run, "ml", "Evaluate the four registered machine-learning "
@@ -559,7 +602,8 @@ COMMANDS = {"offline": offline_main, "stress": stress_main, "web": web_main,
             "tiingo-import": tiingo_main, "gld": gld_main, "notify-test": notify_test_main,
             "features": features_main, "universe": universe_main, "multi": multi_main, "ml": ml_main,
             "broad": broad_main, "data-check": data_check_main,
-            "risk-report": risk_main}
+            "risk-report": risk_main,
+            "mix-preview": mix_preview_main}
 
 
 def main(argv: list[str] | None = None) -> int:
