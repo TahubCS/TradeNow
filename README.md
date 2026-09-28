@@ -284,6 +284,38 @@ live-trading gate verdict changes. Every run is also in
 `data/private/logs/runs.jsonl` and on the dashboard. The order-by-order record
 states whether you or paper-auto approved each order.
 
+## Fixed-mix mode (ADR-015)
+
+Every registered strategy failed the live-trading gate, so the agent can
+instead hold a fixed mix of ETFs that **you** choose, in the Alpaca paper
+account. It does not try to beat the market; it keeps your mix on target,
+checks the data and the account every day, and alerts you. It never uses
+margin, never sells short, and never sells automatically after a loss.
+
+1. **See how a mix behaved** (information only; pick by the drops you could
+   live through, not by the best past return):
+   ```powershell
+   python -m tradenow mix-preview --targets SPY=0.6,AGG=0.4
+   ```
+   Import any ETF that is missing first, with
+   `tiingo-import --symbols ... --start 2006-01-01 --end <last session>`.
+2. **Write your mix** in `data\private\mix.toml` (format in
+   `mix.example.toml`).
+3. **Reset the Alpaca paper account** on alpaca.markets to the balance you
+   would realistically invest. The first mix run requires an empty account
+   and then marks it as mix mode; the GLD paper commands refuse from then on.
+4. **Dry run:** `python -m tradenow mix-plan` shows the orders it would send.
+5. **Schedule it:** `.\scripts\schedule-windows.ps1 -Mix` replaces the GLD
+   tasks with `mix-auto` (evening) and `mix-auto --check` (morning). With
+   `auto_submit = false` in `risk.toml` it only plans; set it to `true` after a
+   few dry-run evenings.
+
+Rebalancing happens once a quarter (and on the first run, or after you edit
+the mix): an ETF trades only when it is more than 5 percentage points of
+equity away from its target. Sells go out one evening and buys on a later
+one, from the cash actually in the account. `mix-status`, `mix-report`,
+`mix-halt --reason ...`, and `mix-resume --confirm` complete the set.
+
 ## Local dashboard
 
 Install the optional web server once, then open the dashboard in your browser:

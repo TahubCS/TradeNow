@@ -60,8 +60,13 @@ Main CLI (`python -m tradenow <command>`):
 - Paper trading: `paper-plan`, `paper-submit --approve ID`, `paper-status`,
   `paper-report`, `paper-halt`, `paper-resume --confirm`, and
   `paper-auto [--dry-run | --check]`.
+- Fixed-mix mode (ADR-015): `mix-preview [--targets A=0.6,B=0.4]`
+  (history, information only), `mix-plan` (dry run), `mix-auto [--dry-run |
+  --check]` (scheduled), `mix-status`, `mix-report`, `mix-halt --reason R`,
+  and `mix-resume --confirm`. The mix is the owner's `data/private/mix.toml`.
 - Other: `notify-test`, and `web` (the dashboard).
-- `scripts/schedule-windows.ps1` registers the Windows scheduled tasks.
+- `scripts/schedule-windows.ps1` registers the Windows scheduled tasks
+  (`-Mix` schedules `mix-auto` instead of `paper-auto`; same task names).
 
 Every command appends one line to `data/private/logs/runs.jsonl`.
 
@@ -98,6 +103,12 @@ Every command appends one line to `data/private/logs/runs.jsonl`.
   `multi_strategies.RelativeStrength` and the `iv10` sizing,
   `broad_research.py` (`BROAD_STUDY`), `data_check.py` (Tiingo vs Alpaca
   check), and `PaperClient.daily_history` (paged Alpaca bars).
+- Fixed-mix mode (ADR-015): `mix_config.py` (mix.toml), `mix_rules.py` (pure
+  planner, timing, alerts, reconciliation), `mix_trading.py` (`MixStore` in
+  `data/private/mix/`, evening/morning runs, halt, resume, report), and
+  `mix_preview.py`. It shares the account's kill switch; its marker
+  `alpaca/mix_mode.json` makes GLD paper commands refuse
+  (`paper_trading.refuse_in_mix_mode`).
 - Paper trading: `alpaca_paper.py` (adapter), `paper_rules.py` (pure rules),
   `paper_trading.py` (orchestration and store), `paper_auto.py`,
   `risk_config.py`, `notify.py`, and `execution_quality.py`.
@@ -152,9 +163,19 @@ Every command appends one line to `data/private/logs/runs.jsonl`.
   cash treatment. Holding a benchmark at lower exposure did better per unit
   of risk than every registered timing process. Verdicts unchanged.
 
-## Next: the owner decides
+- **Fixed-mix mode (ADR-015) is built:** the agent holds an owner-chosen
+  ETF mix in the paper account, rebalancing quarterly with a 5-point band,
+  sells and buys on separate evenings (never margin), alerts instead of
+  automatic selling. It is not expected to beat the market. Live money needs
+  a separate ADR.
 
-No strategy has earned paper trading, let alone live money. Any new idea
-needs its own registration ADR before code and counts as more trials; the
-2006 to 2026 history has now been used by four studies. Start nothing new
-without the owner's decision.
+## Next: the owner sets up the mix
+
+1. Choose a mix (never suggest one; `mix-preview` shows history only) and
+   write `data/private/mix.toml`.
+2. Reset the Alpaca paper account to a realistic balance (the first mix run
+   requires an empty account).
+3. `mix-plan` for a dry run, then `scripts/schedule-windows.ps1 -Mix`; turn on
+   `auto_submit` after a few dry-run evenings. ADR-015's paper criteria: 20
+   unattended sessions without reconciliation failures, the initial
+   investment within the band, and a mean fill cost of at most 10 bps.
