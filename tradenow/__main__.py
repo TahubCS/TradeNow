@@ -13,7 +13,13 @@ from pathlib import Path
 from .alpaca_paper import PaperClient, load_paper_credentials
 from .data_check import CHECK_START, check_symbol, require_passing_check, save_check, summarize
 from .equity import EquityConfig
-from .experiments import multi_experiment_record, record_experiment
+from .experiments import (
+    MULTI_STRATEGY_FAMILY,
+    STRATEGY_FAMILY,
+    multi_experiment_record,
+    read_experiments,
+    record_experiment,
+)
 from .features import snapshot
 from .gld_research import (
     MAX_GLD_CSV_BYTES,
@@ -25,6 +31,7 @@ from .gld_research import (
 from .logs import Run, configure_logging, recorded_run
 from .market_data import load_bars
 from .multi_research import MULTI_STUDY, Study, run_study, save_multi_report
+from .multi_strategies import MULTI_CANDIDATES
 from .notify import desktop_notify
 from .offline import MAX_LOCAL_CSV_BYTES, run_local_csv, run_offline, save_offline
 from .paper_auto import GLD_HISTORY_START, Notices, paper_auto
@@ -39,11 +46,13 @@ from .paper_trading import (
     paper_submit,
 )
 from .risk_config import load_risk
+from .risk_review import build_report, daily_returns, review_gld_study, review_portfolio_study
+from .risk_review import render_markdown as render_risk_markdown
 from .selection import RESEARCH_CONFIG
 from .settings import load_settings
 from .simulation import Config, simulate
 from .stress import run_stress, save_stress
-from .tiingo import import_complete, import_gld, import_symbol, load_api_key
+from .tiingo import import_complete, import_gld, import_symbol, latest_import, load_api_key
 from .universe import BROAD_UNIVERSE, UNIVERSE, describe, load_universe
 
 
@@ -343,6 +352,70 @@ def data_check_main(argv: list[str], run: Run) -> int:
     return 0 if summary["passed"] else 1
 
 
+def _logged(records: list[dict], family: str, data_sha256: str, study: str) -> dict:
+    """The experiment-log record of a study's one registered run on this data."""
+    matches = [item for item in records if item.get("strategy_version") == family
+               and item.get("data", {}).get("sha256") == data_sha256]
+    if not matches:
+        raise ValueError(f"No logged {study} result for the current data; the review "
+                         "only covers runs recorded in the experiment log")
+    return matches[-1]
+
+
+def risk_main(argv: list[str], run: Run) -> int:
+    """The risk-adjusted review of ADR-010 to ADR-013 (ADR-014, information only)."""
+    parser = argparse.ArgumentParser(prog="tradenow risk-report",
+                                     description="Compare each registered process with "
+                                                 "risk-matched benchmarks; information only")
+    parser.add_argument("--output", type=Path, default=Path("artifacts") / "risk")
+    args = parser.parse_args(argv)
+    settings = load_settings()
+    try:
+        try:
+            from .broad_research import BROAD_CANDIDATES, BROAD_STRATEGY_FAMILY
+            from .ml_research import ML_STRATEGY_FAMILY
+            from .ml_strategies import ML_CANDIDATES
+        except ImportError as error:
+            raise ValueError(f"The risk report needs the pinned model libraries "
+                             f"({error.name} is missing); run it with the project's "
+                             ".venv Python") from None
+        records = read_experiments(settings.data_dir / "experiments.jsonl")
+        gld_source, _ = latest_import("GLD", settings.tiingo_dir, MAX_GLD_CSV_BYTES)
+        six = load_universe(settings.tiingo_dir, UNIVERSE)
+        broad = load_universe(settings.tiingo_dir, BROAD_UNIVERSE)
+        rates = daily_returns(broad.bars("SHY"))
+        studies = [
+            review_gld_study(parse_gld_csv(gld_source, RESEARCH_CONFIG),
+                             _logged(records, STRATEGY_FAMILY,
+                                     hashlib.sha256(gld_source).hexdigest(), "ADR-010"),
+                             rates),
+            review_portfolio_study("ADR-011", six, MULTI_CANDIDATES,
+                                   _logged(records, MULTI_STRATEGY_FAMILY, six.sha256,
+                                           "ADR-011"), rates),
+            review_portfolio_study("ADR-012", six, ML_CANDIDATES,
+                                   _logged(records, ML_STRATEGY_FAMILY, six.sha256,
+                                           "ADR-012"), rates),
+            review_portfolio_study("ADR-013", broad, BROAD_CANDIDATES,
+                                   _logged(records, BROAD_STRATEGY_FAMILY, broad.sha256,
+                                           "ADR-013"), rates)]
+        report = build_report(studies, {"symbol": "SHY", "sha256": broad.assets["SHY"].sha256})
+        args.output.mkdir(parents=True, exist_ok=True)
+        json_path, md_path = args.output / "risk-review.json", args.output / "risk-review.md"
+        json_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+        md_path.write_text(render_risk_markdown(report), encoding="utf-8")
+    except (OSError, ValueError, InvalidOperation) as error:
+        return _fail(run, error)
+    _emit(run, {"mode": report["mode"], "adr": report["adr"], "information_only": True,
+                "studies": {item["study"]: {"experiment_id": item["experiment_id"],
+                                            "reproduced": item["reproduced"],
+                                            "volatility_ratio_k": item["volatility_ratio_k"],
+                                            "answers": item["answers"]}
+                            for item in report["studies"]},
+                "report_file": str(json_path.resolve()),
+                "readable_report": str(md_path.resolve())})
+    return 0
+
+
 def ml_main(argv: list[str], run: Run) -> int:
     """The registered machine-learning candidates (ADR-012)."""
     return _study_main(argv, run, "ml", "Evaluate the four registered machine-learning "
@@ -435,7 +508,7 @@ PAPER_COMMANDS = ("paper-status", "paper-plan", "paper-submit", "paper-halt", "p
 def replay_main(argv: list[str], run: Run) -> int:
     parser = argparse.ArgumentParser(
         description="Replay local MGC bars without network or broker access",
-        epilog=("Use 'gld', 'multi', 'ml', 'broad', 'data-check', 'universe', 'offline', 'stress', 'web', or 'tiingo-import' for the research "
+        epilog=("Use 'gld', 'multi', 'ml', 'broad', 'data-check', 'risk-report', 'universe', 'offline', 'stress', 'web', or 'tiingo-import' for the research "
                 "tools, and 'paper-status', 'paper-plan', 'paper-submit', 'paper-halt', "
                 "'paper-resume', 'paper-report', or 'paper-auto' for Alpaca paper trading."),
     )
@@ -485,7 +558,8 @@ def notify_test_main(argv: list[str], run: Run) -> int:
 COMMANDS = {"offline": offline_main, "stress": stress_main, "web": web_main,
             "tiingo-import": tiingo_main, "gld": gld_main, "notify-test": notify_test_main,
             "features": features_main, "universe": universe_main, "multi": multi_main, "ml": ml_main,
-            "broad": broad_main, "data-check": data_check_main}
+            "broad": broad_main, "data-check": data_check_main,
+            "risk-report": risk_main}
 
 
 def main(argv: list[str] | None = None) -> int:

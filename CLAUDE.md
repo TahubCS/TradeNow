@@ -52,7 +52,10 @@ Main CLI (`python -m tradenow <command>`):
   reports in `artifacts/multi/`), `ml` (4 registered ADR-012 models, same
   gate, reports in `artifacts/ml/`), `broad` (10 ADR-013 candidates on 35
   ETFs; refuses to run without a passing `data-check` of the same data), and
-  `features --date D`. `ml` and `broad` need the `ml` extra: run them with
+  `features --date D`. `risk-report` (ADR-014, information only) re-runs the
+  four studies' rolling windows, stops unless each reproduces its logged
+  summary, and compares them with risk-matched benchmarks in
+  `artifacts/risk/`. `ml`, `broad`, and `risk-report` need the `ml` extra: run them with
   `.venv\Scripts\python.exe` (the system Python has no pip).
 - Paper trading: `paper-plan`, `paper-submit --approve ID`, `paper-status`,
   `paper-report`, `paper-halt`, `paper-resume --confirm`, and
@@ -144,6 +147,8 @@ Every command appends one line to `data/private/logs/runs.jsonl`.
   +24% on six ETFs) and halved the benchmarks' drawdowns, but the gap
   remains large. That is final.
 - **All 32 registered candidates (ADR-010 to ADR-013) have failed.**
+- **ADR-014 risk-adjusted review is built (information only):** it can never
+  count as evidence or unlock trading. The owner runs `risk-report` once.
 
 ## Next: the owner decides
 
