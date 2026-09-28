@@ -147,8 +147,10 @@ Every command appends one line to `data/private/logs/runs.jsonl`.
   +24% on six ETFs) and halved the benchmarks' drawdowns, but the gap
   remains large. That is final.
 - **All 32 registered candidates (ADR-010 to ADR-013) have failed.**
-- **ADR-014 risk-adjusted review is built (information only):** it can never
-  count as evidence or unlock trading. The owner runs `risk-report` once.
+- **ADR-014 risk-adjusted review (information only):** no process beat a
+  risk-matched benchmark on return or Sharpe, in any study, under either
+  cash treatment. Holding a benchmark at lower exposure did better per unit
+  of risk than every registered timing process. Verdicts unchanged.
 
 ## Next: the owner decides
 

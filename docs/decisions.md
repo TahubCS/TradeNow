@@ -892,6 +892,28 @@ which would need its own ADR and carries the risk of margin calls and large
 losses. The review writes a report to `artifacts/risk/` and adds nothing to
 the experiment log, because it tests nothing new.
 
+### Result (2026-09-27)
+
+Every study reproduced its logged rolling summary exactly. **No process beat
+a risk-matched benchmark on return, and none had a higher Sharpe ratio, in
+any study, against any benchmark, under either cash treatment.**
+
+| Study (test days) | Process: return / Sharpe / drawdown | B1 risk-matched: return / Sharpe | B2 risk-matched: return / Sharpe |
+|---|---|---|---|
+| ADR-010 (3,654, GLD) | +15.6% / 0.16 / 23.6% | GLD at k 0.51: +72.0% / 0.46 | — |
+| ADR-011 (3,402) | +11.0% / 0.17 / 16.7% | k 0.44: +51.9% / 0.59 | k 0.29: +70.9% / 0.75 |
+| ADR-012 (3,402) | +24.2% / 0.30 / 16.6% | k 0.48: +57.5% / 0.59 | k 0.32: +79.2% / 0.75 |
+| ADR-013 (3,402) | +71.4% / 0.51 / 13.7% | k 0.57: +99.1% / 0.64 | k 0.45: +127.2% / 0.75 |
+
+Figures use cash at 0%. With idle cash earning SHY, every process gained
+(ADR-013 to +87.4%), but so did the risk-matched benchmarks (to +111.0% and
++144.3%), and every answer stayed no. The only point in the processes' favour:
+ADR-013's drawdown (13.7%) was smaller than its risk-matched benchmarks'
+(17.0% and 16.4%); in ADR-011 and ADR-012 it was larger. Holding a
+benchmark at lower exposure would have given more return per unit of risk
+than any registered timing process. Nothing changes: every verdict stands,
+and no process earns paper trading.
+
 ---
 
 ## ADR Template
