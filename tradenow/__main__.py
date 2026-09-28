@@ -32,6 +32,7 @@ from .logs import Run, configure_logging, recorded_run
 from .market_data import load_bars
 from .mix_config import load_mix, parse_targets_option
 from .mix_preview import preview, render_preview
+from .mix_trading import MixStore, mix_auto, mix_halt, mix_report, mix_resume, mix_status
 from .multi_research import MULTI_STUDY, Study, run_study, save_multi_report
 from .multi_strategies import MULTI_CANDIDATES
 from .notify import desktop_notify
@@ -55,7 +56,8 @@ from .settings import load_settings
 from .simulation import Config, simulate
 from .stress import run_stress, save_stress
 from .tiingo import import_complete, import_gld, import_symbol, latest_import, load_api_key
-from .universe import BROAD_UNIVERSE, UNIVERSE, describe, load_universe
+from .universe import BROAD_UNIVERSE, UNIVERSE, describe, load_universe, parse_adjusted_csv
+from .universe import MAX_CSV_BYTES as UNIVERSE_MAX_CSV_BYTES
 
 
 def _fail(run: Run, error: BaseException) -> int:
@@ -494,6 +496,74 @@ def _paper_auto_command(store: PaperStore, args: argparse.Namespace) -> dict:
                       desktop_notify, load_settings().log_dir, args.dry_run, args.check)
 
 
+MIX_HISTORY_START = date(2006, 1, 1)
+MIX_COMMANDS = ("mix-status", "mix-plan", "mix-auto", "mix-halt", "mix-resume", "mix-report")
+
+
+def _mix_importer(tiingo_dir: Path) -> Callable[[list[str], date], dict]:
+    def import_through(symbols: list[str], end: date) -> dict:
+        key = load_api_key()
+        results: dict[str, object] = {}
+        for symbol in symbols:
+            if import_complete(MIX_HISTORY_START, end, tiingo_dir, symbol):
+                results[symbol] = "ALREADY_COMPLETE"
+                continue
+            results[symbol] = import_symbol(symbol, MIX_HISTORY_START, end, key,
+                                            tiingo_dir)["result"]
+        return results
+    return import_through
+
+
+def _mix_closes(tiingo_dir: Path) -> Callable[[list[str]], dict[str, dict[date, Decimal]]]:
+    def load(symbols: list[str]) -> dict[str, dict[date, Decimal]]:
+        return {symbol: parse_adjusted_csv(latest_import(symbol, tiingo_dir,
+                                                         UNIVERSE_MAX_CSV_BYTES)[0],
+                                           symbol).raw_close
+                for symbol in symbols}
+    return load
+
+
+def mix_main(command: str, argv: list[str], run: Run) -> int:
+    """Fixed-mix mode in the Alpaca paper account (ADR-015)."""
+    parser = argparse.ArgumentParser(prog=f"tradenow {command}")
+    if command == "mix-auto":
+        mode = parser.add_mutually_exclusive_group()
+        mode.add_argument("--dry-run", action="store_true",
+                          help="Plan only, even if risk.toml sets auto_submit = true")
+        mode.add_argument("--check", action="store_true",
+                          help="Morning check: reconcile and report fills; never trades")
+    elif command == "mix-halt":
+        parser.add_argument("--reason", required=True)
+    elif command == "mix-resume":
+        parser.add_argument("--confirm", action="store_true", required=True)
+    args = parser.parse_args(argv)
+    settings = load_settings()
+    store = MixStore(settings.data_dir / "mix", PaperStore(settings.alpaca_dir))
+    try:
+        if command == "mix-report":
+            _emit(run, _jsonable(mix_report(store)))
+            return 0
+        client = PaperClient(load_paper_credentials())
+        if command == "mix-halt":
+            result = mix_halt(client, store, args.reason)
+        elif command == "mix-resume":
+            result = mix_resume(client, store)
+        else:
+            mix = load_mix(settings.data_dir / "mix.toml")
+            if command == "mix-status":
+                result = mix_status(client, store, mix)
+            else:
+                result = mix_auto(client, store, mix, load_risk(settings.data_dir / "risk.toml"),
+                                  _mix_importer(settings.tiingo_dir),
+                                  _mix_closes(settings.tiingo_dir), desktop_notify,
+                                  dry_run=command == "mix-plan" or args.dry_run,
+                                  check_only=command == "mix-auto" and args.check)
+    except (OSError, ValueError, InvalidOperation) as error:
+        return _fail(run, error)
+    _emit(run, _jsonable(result))
+    return 0
+
+
 def paper_main(command: str, argv: list[str], run: Run) -> int:
     """Alpaca paper commands; only these contact the paper trading API
     (paper-report reads local files only)."""
@@ -609,12 +679,15 @@ COMMANDS = {"offline": offline_main, "stress": stress_main, "web": web_main,
 def main(argv: list[str] | None = None) -> int:
     """Dispatch one command and record it in the run log, whatever the outcome."""
     argv = sys.argv[1:] if argv is None else argv
-    command = argv[0] if argv and (argv[0] in COMMANDS or argv[0] in PAPER_COMMANDS) else ""
+    command = argv[0] if argv and (argv[0] in COMMANDS or argv[0] in PAPER_COMMANDS
+                                   or argv[0] in MIX_COMMANDS) else ""
     rest = argv[1:] if command else argv
     settings = load_settings()
     configure_logging(settings.log_dir)
     with recorded_run(command or "replay", settings.log_dir, settings.mode) as run:
-        if command in PAPER_COMMANDS:
+        if command in MIX_COMMANDS:
+            run.exit_code = mix_main(command, rest, run)
+        elif command in PAPER_COMMANDS:
             run.exit_code = paper_main(command, rest, run)
         elif command:
             run.exit_code = COMMANDS[command](rest, run)

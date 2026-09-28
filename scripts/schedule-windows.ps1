@@ -1,6 +1,7 @@
 <#
 .SYNOPSIS
-  Register (or remove) the Windows scheduled tasks that run paper-auto.
+  Register (or remove) the Windows scheduled tasks that run paper-auto, or
+  mix-auto with -Mix (fixed-mix mode, ADR-015).
 
 .DESCRIPTION
   Evening: every 30 minutes from 6:30 pm to 10:30 pm US Eastern on weekdays.
@@ -15,13 +16,19 @@
   script. If your time zone changes, or it does not follow US daylight-saving
   dates, run the script again after each change.
 
+  -Mix registers the same two tasks for fixed-mix mode instead (mix-auto and
+  mix-auto --check). The task names stay the same, so only one mode is ever
+  scheduled. Mix mode needs no ml extra, so the system Python works.
+
 .EXAMPLE
   .\scripts\schedule-windows.ps1
   .\scripts\schedule-windows.ps1 -Python C:\TradeNow\.venv\Scripts\python.exe
+  .\scripts\schedule-windows.ps1 -Mix
   .\scripts\schedule-windows.ps1 -Remove
 #>
 param(
     [string]$Python = '',
+    [switch]$Mix,
     [switch]$Remove
 )
 $ErrorActionPreference = 'Stop'
@@ -61,6 +68,10 @@ function Get-TradingDays([DateTime]$LocalStart) {
 }
 
 $user = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+$command = if ($Mix) { 'mix-auto' } else { 'paper-auto' }
+$mixWork = 'import the mix closes, rebalance when due, and (if auto_submit) send PAPER orders'
+$gldWork = 'import the GLD close, plan, and (if auto_submit) send a PAPER order'
+$what = if ($Mix) { $mixWork } else { $gldWork }
 $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
 $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -StartWhenAvailable `
     -ExecutionTimeLimit (New-TimeSpan -Minutes 20) -AllowStartIfOnBatteries `
@@ -70,21 +81,21 @@ $eveningStart = ConvertFrom-Eastern 18 30
 $evening = New-ScheduledTaskTrigger -Weekly -DaysOfWeek (Get-TradingDays $eveningStart) -At $eveningStart
 $evening.Repetition = (New-ScheduledTaskTrigger -Once -At $eveningStart `
     -RepetitionInterval (New-TimeSpan -Minutes 30) -RepetitionDuration (New-TimeSpan -Hours 4)).Repetition
-$eveningAction = New-ScheduledTaskAction -Execute $interpreter -Argument '-m tradenow paper-auto' `
+$eveningAction = New-ScheduledTaskAction -Execute $interpreter -Argument "-m tradenow $command" `
     -WorkingDirectory $repo
 Register-ScheduledTask -TaskName $eveningName -Trigger $evening -Action $eveningAction `
     -Principal $principal -Settings $settings -Force `
-    -Description 'TradeNow: import the GLD close, plan, and (if auto_submit) send a PAPER order.' | Out-Null
+    -Description "TradeNow: $what." | Out-Null
 
 $morningStart = ConvertFrom-Eastern 10 0
 $morning = New-ScheduledTaskTrigger -Weekly -DaysOfWeek (Get-TradingDays $morningStart) -At $morningStart
-$morningAction = New-ScheduledTaskAction -Execute $interpreter -Argument '-m tradenow paper-auto --check' `
+$morningAction = New-ScheduledTaskAction -Execute $interpreter -Argument "-m tradenow $command --check" `
     -WorkingDirectory $repo
 Register-ScheduledTask -TaskName $morningName -Trigger $morning -Action $morningAction `
     -Principal $principal -Settings $settings -Force `
     -Description 'TradeNow: reconcile the PAPER account and report fills. Never trades.' | Out-Null
 
-Write-Host "Registered for $user using $interpreter"
+Write-Host "Registered $command for $user using $interpreter"
 Write-Host ("  Evening: {0:HH:mm} local, every 30 minutes for 4 hours, {1}" -f $eveningStart, ((Get-TradingDays $eveningStart) -join ', '))
 Write-Host ("  Morning: {0:HH:mm} local, {1}" -f $morningStart, ((Get-TradingDays $morningStart) -join ', '))
 Write-Host 'Results: data\private\logs\runs.jsonl and the dashboard. Remove with -Remove.'

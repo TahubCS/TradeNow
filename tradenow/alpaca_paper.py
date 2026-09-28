@@ -33,6 +33,8 @@ MAX_HISTORY_PAGES = 20
 MAX_ORDER_SHARES = 10_000
 FRACTION_BEYOND_MICROS = re.compile(r"(\.\d{6})\d+")
 CLIENT_ORDER_ID = re.compile(r"tn-gld-[a-z0-9-]{1,48}")
+MIX_CLIENT_ORDER_ID = re.compile(r"tn-mix-[a-z0-9-]{1,48}")
+SYMBOL = re.compile(r"[A-Z]{1,5}")
 # Statuses after which Alpaca will not fill an order further.
 FINAL_ORDER_STATUSES = frozenset({"filled", "canceled", "expired", "rejected", "replaced"})
 
@@ -134,6 +136,44 @@ class PaperOrder:
 
     def payload(self) -> dict:
         body = {"symbol": "GLD", "qty": str(self.qty), "side": self.side,
+                "time_in_force": "day", "client_order_id": self.client_order_id,
+                "type": "market" if self.limit_price is None else "limit"}
+        if self.limit_price is not None:
+            body["limit_price"] = str(self.limit_price)
+        return body
+
+
+@dataclass(frozen=True)
+class MixOrder:
+    """Fixed-mix orders (ADR-015): one ETF, whole shares, day only. Buys are
+    limit orders so a gap cannot fill at any price and the total stays within
+    cash; sells are market orders so a rebalance or exit is never blocked."""
+    client_order_id: str
+    symbol: str
+    side: str
+    qty: int
+    limit_price: Decimal | None = None
+
+    def __post_init__(self) -> None:
+        if not MIX_CLIENT_ORDER_ID.fullmatch(self.client_order_id):
+            raise ValueError("Invalid mix client order ID")
+        if not SYMBOL.fullmatch(self.symbol):
+            raise ValueError("Invalid mix order symbol")
+        if self.side not in ("buy", "sell"):
+            raise ValueError("Mix order side must be buy or sell")
+        if (isinstance(self.qty, bool) or not isinstance(self.qty, int)
+                or not 0 < self.qty <= MAX_ORDER_SHARES):
+            raise ValueError(f"Mix order must be 1 to {MAX_ORDER_SHARES} whole shares")
+        if self.side == "sell" and self.limit_price is not None:
+            raise ValueError("Mix sells must be market orders")
+        if self.side == "buy":
+            price = self.limit_price
+            if (price is None or not price.is_finite() or price <= 0
+                    or price != price.quantize(Decimal("0.01"))):
+                raise ValueError("Mix buys need a positive whole-cent limit price")
+
+    def payload(self) -> dict:
+        body = {"symbol": self.symbol, "qty": str(self.qty), "side": self.side,
                 "time_in_force": "day", "client_order_id": self.client_order_id,
                 "type": "market" if self.limit_price is None else "limit"}
         if self.limit_price is not None:
@@ -405,6 +445,22 @@ class PaperClient:
                 or submitted.qty != order.qty):
             raise AlpacaError("Alpaca acknowledged a different order than was sent")
         return submitted
+
+    def submit_mix(self, order: MixOrder) -> BrokerOrder:
+        submitted = parse_order(self._request("POST", PAPER_ENDPOINT, "/v2/orders",
+                                              order.payload()))
+        if (submitted.client_order_id != order.client_order_id
+                or submitted.symbol != order.symbol or submitted.side != order.side
+                or submitted.qty != order.qty):
+            raise AlpacaError("Alpaca acknowledged a different order than was sent")
+        return submitted
+
+    def asset_tradable(self, symbol: str) -> bool:
+        if not SYMBOL.fullmatch(symbol):
+            raise ValueError("Invalid symbol")
+        asset = _object(self._request("GET", PAPER_ENDPOINT, f"/v2/assets/{symbol}"), "asset")
+        return (asset.get("symbol") == symbol and asset.get("status") == "active"
+                and asset.get("tradable") is True)
 
     def cancel_all_orders(self) -> int:
         """Kill-switch path: ask Alpaca to cancel every open order in the paper account."""

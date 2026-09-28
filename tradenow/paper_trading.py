@@ -47,6 +47,8 @@ CROSS_CHECK_CALENDAR_DAYS = 21
 PLAN_ID = re.compile(r"[0-9a-f]{16}")
 # Version 2 adds execution-quality fields to each order; version 1 still loads.
 LEDGER_SCHEMA = 2
+# Written by fixed-mix mode (ADR-015) in this directory; GLD commands then refuse.
+MODE_MARKER = "mix_mode.json"
 APPROVALS = ("manual", "auto")
 
 
@@ -320,6 +322,15 @@ def _plan_id(plan: dict) -> str:
 
 # ------------------------------------------------------------------- checks
 
+def refuse_in_mix_mode(store: PaperStore) -> None:
+    """Two controllers must never share one account: GLD trading commands refuse
+    while fixed-mix mode (ADR-015) has marked the account."""
+    marker = store.directory / MODE_MARKER
+    if marker.exists():
+        raise PaperBlocked("MIX_MODE_ACTIVE", "the paper account runs the fixed mix "
+                           f"(ADR-015); GLD commands refuse while {marker} exists")
+
+
 def _require_no_kill_switch(store: PaperStore) -> None:
     kill = store.kill_switch()
     if kill is not None:
@@ -433,6 +444,7 @@ def paper_plan(client: BrokerClient, store: PaperStore, source_bytes: bytes,
     """Decide tomorrow's GLD order from today's close; never sends it."""
     risk = risk or default_risk()
     config = risk.config.equity_config()
+    refuse_in_mix_mode(store)
     _require_no_kill_switch(store)
     account, clock = _preflight(client)
     if clock.is_open:
@@ -535,6 +547,7 @@ def paper_submit(client: BrokerClient, store: PaperStore, plan_id: str,
     """Send one approved plan's order, at most once, before its session opens."""
     if approval not in APPROVALS:
         raise ValueError(f"approval must be one of {APPROVALS}")
+    refuse_in_mix_mode(store)
     _require_no_kill_switch(store)
     plan = store.load_plan(plan_id)
     details = plan.get("order")
@@ -602,6 +615,7 @@ def paper_halt(client: BrokerClient, store: PaperStore, reason: str,
 
 def paper_resume(client: BrokerClient, store: PaperStore) -> dict:
     """Clear the kill switch only when Alpaca and the ledger agree."""
+    refuse_in_mix_mode(store)
     if store.kill_switch() is None:
         return {"kill_switch": "NOT_ENGAGED"}
     _preflight(client)

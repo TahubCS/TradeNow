@@ -17,6 +17,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from typing import Protocol
 
 from .notify import Notifier
 from .paper_trading import (
@@ -67,11 +68,16 @@ def run_lock(path: Path) -> Iterator[None]:
         path.unlink(missing_ok=True)
 
 
+class HasDirectory(Protocol):
+    """Any state store: notices are kept beside its other files."""
+    directory: Path
+
+
 class Notices:
     """Send each distinct notice at most once per day, so a blocked evening
     of scheduled retries produces one notification, not nine."""
 
-    def __init__(self, store: PaperStore, notify: Notifier, day: date):
+    def __init__(self, store: "PaperStore | HasDirectory", notify: Notifier, day: date):
         self.path = store.directory / "notices.json"
         self.notify, self.day = notify, day.isoformat()
 

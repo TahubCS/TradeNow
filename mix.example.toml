@@ -1,0 +1,13 @@
+# Copy to data/private/mix.toml and write YOUR mix (ADR-015). This file shows
+# the format only; it deliberately contains no weights, and the system never
+# suggests a mix. Try candidates first with:
+#   python -m tradenow mix-preview --targets SYMBOL=WEIGHT,SYMBOL=WEIGHT
+#
+# Rules: 1 to 12 ETF symbols Alpaca can trade, each with a Tiingo import;
+# weights above 0 with at most 4 decimal places, adding up to at most 1
+# (anything below 1 stays in cash). Changing this file makes the next evening
+# run rebalance to it; a symbol you remove is sold.
+
+[targets]
+# SYMBOL = 0.50
+# SYMBOL = 0.50
