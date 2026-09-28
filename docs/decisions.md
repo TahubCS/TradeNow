@@ -846,6 +846,54 @@ across ADR-010 to ADR-013 have failed.
 
 ---
 
+## ADR-014 — Risk-Adjusted Review of ADR-010 to ADR-013 (information only)
+
+**Status:** Accepted, 2026-09-27. Written after all four results were
+known, so it can never count as evidence for the live-trading gate, unlock
+paper trading, or change any recorded verdict.
+
+### Question
+
+Did any registered process earn more per unit of risk than its
+benchmarks? A process that swings half as much as SPY is compared with
+half SPY and half cash, which has the same risk and needs no skill.
+
+### Method
+
+1. **Reproduce first.** Each study's rolling test windows are re-run
+   unchanged at $0.01 slippage. The rolling summary must equal the one in
+   the experiment log for the same data, number for number; otherwise the
+   review stops. (Code hashes, and so run IDs, have changed since the runs
+   through refactors that leave results unchanged; the summary comparison
+   proves that.) The $0.10 stress runs and holdouts are not repeated.
+2. **Daily curves.** Each process and benchmark is followed day by day
+   through its test windows, chained end to end (clarification 11). ADR-010
+   uses its 100% GLD buy-and-hold benchmark; ADR-011 to ADR-013 use B1 and
+   B2.
+3. **Two cash treatments.** Idle cash earns 0% (as registered), or SHY's
+   dividend-adjusted daily return, credited to every portfolio's cash
+   from the previous close.
+4. **Measures:** total and annualized return (252 days a year),
+   annualized volatility, Sharpe ratio (over the cash treatment's cash
+   return), Sortino ratio, and maximum drawdown.
+5. **Risk-matched benchmarks:** each benchmark held at a constant fraction
+   k with the rest in cash, rebalanced daily without costs (a small
+   advantage to the benchmark). k is the process's daily volatility divided
+   by the benchmark's, with 0% cash, over the same days.
+6. **Answers:** whether each process beat each risk-matched benchmark on
+   total return, and whether its Sharpe ratio exceeded the benchmark's,
+   under each cash treatment.
+
+### What it can and cannot decide
+
+It answers the question and nothing more. Every period it uses has already
+been seen. A process that wins here earns more than SPY only with leverage,
+which would need its own ADR and carries the risk of margin calls and large
+losses. The review writes a report to `artifacts/risk/` and adds nothing to
+the experiment log, because it tests nothing new.
+
+---
+
 ## ADR Template
 
 ### ADR-XXX — Title
