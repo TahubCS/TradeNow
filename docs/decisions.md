@@ -916,6 +916,86 @@ and no process earns paper trading.
 
 ---
 
+## ADR-015 — Fixed-Mix Portfolio Mode (paper)
+
+**Status:** Accepted, 2026-09-28.
+
+### Context
+
+All 32 registered strategies failed, and ADR-014 found that holding a
+benchmark at lower exposure beat every timing process per unit of risk. The
+owner wants the agent to keep working. It is repurposed to run a fixed,
+diversified mix that the owner chooses, in the Alpaca **paper** account. It
+does not predict anything and is **not expected to beat the market**; it
+earns what the mix earns, minus costs, including the bad years.
+
+### The mix
+
+- The owner writes it in `data/private/mix.toml` under `[targets]`, one
+  ETF symbol and weight per line. The system never suggests a mix.
+- 1 to 12 symbols; weights above 0 with at most 4 decimal places, adding up
+  to at most 1 (the rest stays in cash). Every symbol needs a Tiingo import
+  and must be tradable on Alpaca.
+- Changing the file is the owner's decision; the next evening run
+  rebalances to it. A symbol removed from the mix is sold.
+- `mix-preview` shows how a mix behaved historically, for information only.
+  Choosing a mix by its best past return is hindsight; choose by the risk
+  you can live with.
+
+### Rebalancing
+
+- **When:** once per calendar quarter, at the first evening run whose latest
+  close is in a new quarter, and on the first run.
+- **What:** an asset trades only if its value differs from its target by
+  more than 5% of equity (5 percentage points), as in the simulator's band.
+  Assets inside the band are left alone.
+- **Two phases, so margin is never used:** if any asset is above its band,
+  that evening plans only sells (market, day orders, at the next open). A
+  later evening, from the cash actually in the account, plans the buys:
+  limit orders at the last close plus `buy_limit_buffer`, whole shares, the
+  total at the limits never above cash, shrunk pro rata when needed. Unfilled
+  buys are planned again the next evening. The quarter's rebalance ends when
+  no asset is outside its band, or when the remaining buys cannot afford a
+  single share.
+- Orders are planned after the close from Tiingo raw closes, cross-checked
+  against Alpaca for every symbol, and sent only when `auto_submit` is true
+  (otherwise a dry run). Each order is recorded before it is sent and sent at
+  most once.
+
+### Risk handling
+
+- **No automatic selling on losses.** A fixed mix sold after a drop sells
+  near the bottom. Drawdowns of 10%, 20%, and 30% from the peak, and a daily
+  loss at `daily_loss_limit_fraction`, send alerts only.
+- **The kill switch stays** (shared with GLD mode): a reconciliation
+  mismatch, a position or open order this mode did not create, or negative
+  cash engages it, and trading stops until `mix-resume` after review.
+- Never margin, never short, whole shares only.
+
+### Switching from GLD mode
+
+- The first mix run requires an empty paper account (no positions, no open
+  orders); the owner resets the Alpaca paper account to a realistic balance
+  first. It then marks the account as mix mode, and the GLD paper commands
+  refuse to trade until that marker is removed.
+- The GLD strategy and research code are kept for reference.
+
+### What "working" means in paper
+
+At least 20 unattended sessions with no reconciliation failures or manual
+repairs, the initial investment completed within the band, and a mean fill
+cost against the reference close of at most 10 bps over at least 10 fills.
+
+### Live money
+
+Not part of this ADR. Rule 1 (paper only) changes only through a separate ADR
+covering account security, taxes (a rebalancing sale can be taxable outside
+a retirement account), recurring deposits, and a small start. Brokers and
+robo-advisors offer automatic rebalancing, often for free; this mode exists
+for control and learning, not because it is expected to do better.
+
+---
+
 ## ADR Template
 
 ### ADR-XXX — Title
